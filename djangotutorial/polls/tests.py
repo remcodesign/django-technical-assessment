@@ -7,6 +7,8 @@ from unittest.mock import patch
 from .models import Choice, Question
 
 
+# the extra comments in these tests are intentional: they explain the "why" behind each assertion and test case.
+# they can be removed in a real codebase, but for this exercise, they demonstrate the thought process and rationale for each test.
 class QuestionModelTests(TestCase):
 	"""
 	Unit tests for the Question model.
