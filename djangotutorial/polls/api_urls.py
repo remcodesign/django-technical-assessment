@@ -1,11 +1,10 @@
-from django.urls import path
+from rest_framework.routers import DefaultRouter
 
-from . import views
+from .api_views import QuestionViewSet
 
 app_name = "polls_api"
 
-urlpatterns = [
-    path("", views.APIQuestionListView.as_view(), name="question-list"),
-    path("<int:pk>/", views.APIQuestionDetailView.as_view(), name="question-detail"),
-    path("<int:question_id>/choices/", views.APIChoiceListView.as_view(), name="choice-list"),
-]
+router = DefaultRouter()
+router.register("", QuestionViewSet, basename="question")
+
+urlpatterns = router.urls
