@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -116,3 +117,17 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULE = {
+    'create-hourly-sample-question': {
+        'task': 'polls.tasks.create_hourly_question',
+        'schedule': timedelta(hours=1),
+    },
+    # test schedule for smoke question creation every minute, commented out to avoid cluttering the database during development
+    # 'create-minute-smoke-question': {
+    #     'task': 'polls.tasks.create_smoke_question',
+    #     'schedule': timedelta(minutes=1),
+    # },
+}

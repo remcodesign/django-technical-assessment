@@ -6,4 +6,8 @@ requires-python = ">=3.14,<3.15"
 dependencies = [
     "Django==6.0",
     "djangorestframework==3.16.1",
+    "celery>=5.4,<6",
+    "redis>=5,<6",
+    "pytest>=8.3,<9",
+    "pytest-django>=4.11,<5",
 ]

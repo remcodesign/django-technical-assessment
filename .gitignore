@@ -35,3 +35,6 @@ __pycache__
 
 # DB files
 db.sqlite3
+djangotutorial/celerybeat-schedule
+djangotutorial/celerybeat-schedule-shm
+djangotutorial/celerybeat-schedule-wal
