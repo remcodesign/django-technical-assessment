@@ -1,11 +1,18 @@
-from django.db import IntegrityError, transaction
-from django.db.models import Count, F
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views import generic
+from django.views.decorators.csrf import ensure_csrf_cookie
+from typing import cast
 
-from .models import Choice, Question, UserVote
+from .models import Question, QuestionManager
+from .services import (
+    DuplicateVote,
+    InvalidChoice,
+    MissingChoice,
+    UserNotAuthenticated,
+    cast_vote,
+)
 
 
 class IndexView(generic.ListView):
@@ -15,7 +22,7 @@ class IndexView(generic.ListView):
     def get_queryset(self):
         """Return the last ten published questions."""
         # Keep the related choice count in SQL so the list page stays efficient.
-        return Question.objects.annotate(choice_count=Count("choice")).order_by("-pub_date")[:10]
+        return cast(QuestionManager, Question.objects).with_choice_count().order_by("-pub_date")[:10]
 
 
 class DetailView(generic.DetailView):
@@ -28,11 +35,24 @@ class ResultsView(generic.DetailView):
     template_name = "polls/results.html"
 
 
+@ensure_csrf_cookie
+def api_frontend(request):
+    # The template reads the CSRF cookie in JavaScript, so we make sure it exists on first load.
+    return render(
+        request,
+        "polls/api_frontend.html",
+        {
+            "api_base_url": reverse("polls_api:question-list"),
+        },
+    )
+
+
 def vote(request, question_id):
     question = get_object_or_404(Question, pk=question_id)
 
-    # Require login to vote, but allow anyone to view the question and results.
-    if not request.user.is_authenticated:
+    try:
+        cast_vote(request.user, question, request.POST.get("choice"))
+    except UserNotAuthenticated:
         return render(
             request,
             "polls/detail.html",
@@ -41,11 +61,7 @@ def vote(request, question_id):
                 "error_message": "You must be logged in to vote.",
             },
         )
-    
-    try:
-        selected_choice = question.choice_set.get(pk=request.POST["choice"])
-    except (KeyError, Choice.DoesNotExist):
-        # Redisplay the question voting form.
+    except (MissingChoice, InvalidChoice):
         return render(
             request,
             "polls/detail.html",
@@ -54,20 +70,7 @@ def vote(request, question_id):
                 "error_message": "You didn't select a choice.",
             },
         )
-
-    try:
-        # Use a transaction to ensure that the vote is recorded atomically
-        with transaction.atomic():
-            # Store the individual vote explicitly and keep the existing counter in sync.
-            UserVote.objects.create(
-                user=request.user,
-                choice=selected_choice,
-                question=question,
-            )
-            # the original code - as a cache of the votes
-            selected_choice.votes = F("votes") + 1
-            selected_choice.save(update_fields=["votes"])
-    except IntegrityError:
+    except DuplicateVote:
         return render(
             request,
             "polls/detail.html",
@@ -80,4 +83,4 @@ def vote(request, question_id):
     # Always return an HttpResponseRedirect after successfully dealing
     # with POST data. This prevents data from being posted twice if a
     # user hits the Back button.
-    return HttpResponseRedirect(reverse("polls:results", args=(question.id,)))
+    return HttpResponseRedirect(reverse("polls:results", args=(question.pk,)))

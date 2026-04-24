@@ -1,8 +1,10 @@
+from django.contrib.auth import get_user_model
+from django.db.models import Count
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
-from django.contrib.auth import get_user_model
-from django.db.models import Count
+from typing import Any
+
 from rest_framework.test import APIClient
 from unittest.mock import patch
 
@@ -294,6 +296,47 @@ class PollsApiTests(TestCase):
 	def setUp(self) -> None:
 		self.client = APIClient()
 
+	def test_api_frontend_page_sets_csrf_cookie_and_loads_alpine(self) -> None:
+		"""
+		Validate that the API frontend page is usable for a browser fetch-based flow.
+
+		How it works:
+		1. Request the new frontend page.
+		2. Assert that Django sets a CSRF cookie for the JavaScript fetch calls.
+		3. Assert that the Alpine CDN script and the frontend bootstrap function are present.
+
+		Why this matters:
+		The frontend page is not a regular Django form page, so if the CSRF cookie is not
+		set on first load, the vote request cannot succeed with SessionAuthentication.
+		"""
+		response = self.client.get(reverse("polls:api_frontend"))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertIn("csrftoken", response.cookies)
+		self.assertContains(response, "cdn.jsdelivr.net/npm/alpinejs")
+		self.assertContains(response, "pollsFrontend")
+
+	def test_api_question_list_includes_choice_count(self) -> None:
+		"""
+		Validate that the list API exposes the computed count needed by the frontend.
+
+		Why this matters:
+		The API frontend mirrors the HTML index page, so the list payload must include the
+		same count data without requiring an extra request per question.
+		"""
+		question = Question.objects.create(question_text="API list question")
+		Choice.objects.bulk_create(
+			[
+				Choice(question=question, choice_text="Blue"),
+				Choice(question=question, choice_text="Green"),
+			]
+		)
+
+		response: Any = self.client.get(reverse("polls_api:question-list"))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data[0]["choice_count"], 2)
+
 	def test_api_question_detail_returns_nested_choices(self) -> None:
 		"""
 		Validate that GET /api/polls/<id>/ returns a question with nested choices.
@@ -315,13 +358,90 @@ class PollsApiTests(TestCase):
 		question = Question.objects.create(question_text="API question")
 		choice = Choice.objects.create(question=question, choice_text="Choice A")
 
-		response = self.client.get(reverse("polls_api:question-detail", kwargs={"pk": question.pk}))
+		response: Any = self.client.get(reverse("polls_api:question-detail", kwargs={"pk": question.pk}))
 
 		# This guards the public API contract: detail responses must include nested choices.
 		self.assertEqual(response.status_code, 200)
 		self.assertEqual(response.data["id"], question.pk)
+		self.assertEqual(response.data["choice_count"], 1)
 		self.assertEqual(response.data["choices"][0]["id"], choice.pk)
 		self.assertEqual(response.data["choices"][0]["choice_text"], "Choice A")
+
+	def test_api_vote_creates_user_vote_and_returns_updated_detail(self) -> None:
+		"""
+		Validate the new API vote endpoint end-to-end with session auth and CSRF.
+
+		How it works:
+		1. Log the user in with a real session.
+		2. Load the API frontend page so Django sets the CSRF cookie.
+		3. POST the vote through the API endpoint with the CSRF token in the header.
+		4. Assert the response is 200 and the choice counter increases.
+
+		Why this matters:
+		This is the core Phase 7 write path. If session auth, CSRF, or the atomic vote
+		update breaks, the API-driven frontend cannot be trusted.
+		"""
+		question = Question.objects.create(question_text="Vote API question")
+		choice = Choice.objects.create(question=question, choice_text="Blue")
+		user = User.objects.create_user(username="api-voter", password="secret123")
+		csrf_client = APIClient(enforce_csrf_checks=True)
+		csrf_client.force_login(user)
+		csrf_client.get(reverse("polls:api_frontend"))
+		csrf_token = csrf_client.cookies["csrftoken"].value
+
+		response: Any = csrf_client.post(
+			reverse("polls_api:question-vote", kwargs={"pk": question.pk}),
+			{"choice": choice.pk},
+			format="json",
+			HTTP_X_CSRFTOKEN=csrf_token,
+		)
+
+		choice.refresh_from_db()
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(choice.votes, 1)
+		self.assertEqual(UserVote.objects.count(), 1)
+		self.assertEqual(response.data["choices"][0]["votes"], 1)
+
+	def test_api_vote_rejects_duplicate_vote(self) -> None:
+		"""
+		Validate that the API vote endpoint keeps the one-vote-per-user rule intact.
+
+		Why this matters:
+		The new frontend uses the API directly, so the duplicate-vote guard must still be
+		enforced there, not only in the old HTML form flow.
+		"""
+		question = Question.objects.create(question_text="Duplicate vote API question")
+		first_choice = Choice.objects.create(question=question, choice_text="Blue")
+		second_choice = Choice.objects.create(question=question, choice_text="Green")
+		user = User.objects.create_user(username="api-double-voter", password="secret123")
+		csrf_client = APIClient(enforce_csrf_checks=True)
+		csrf_client.force_login(user)
+		csrf_client.get(reverse("polls:api_frontend"))
+		csrf_token = csrf_client.cookies["csrftoken"].value
+
+		first_response: Any = csrf_client.post(
+			reverse("polls_api:question-vote", kwargs={"pk": question.pk}),
+			{"choice": first_choice.pk},
+			format="json",
+			HTTP_X_CSRFTOKEN=csrf_token,
+		)
+		second_response: Any = csrf_client.post(
+			reverse("polls_api:question-vote", kwargs={"pk": question.pk}),
+			{"choice": second_choice.pk},
+			format="json",
+			HTTP_X_CSRFTOKEN=csrf_token,
+		)
+
+		first_choice.refresh_from_db()
+		second_choice.refresh_from_db()
+
+		self.assertEqual(first_response.status_code, 200)
+		self.assertEqual(second_response.status_code, 409)
+		self.assertEqual(second_response.data["error_message"], "You already voted on this question.")
+		self.assertEqual(first_choice.votes, 1)
+		self.assertEqual(second_choice.votes, 0)
+		self.assertEqual(UserVote.objects.count(), 1)
 
 	def test_api_add_choice_creates_choice_for_question(self) -> None:
 		"""
@@ -346,14 +466,14 @@ class PollsApiTests(TestCase):
 		"""
 		question = Question.objects.create(question_text="API write question")
 
-		response = self.client.post(
+		response: Any = self.client.post(
 			reverse("polls_api:question-add-choice", kwargs={"pk": question.pk}),
 			{"choice_text": "New option"},
 			format="json",
 		)
 
 		self.assertEqual(response.status_code, 201)
-		self.assertEqual(question.choice_set.count(), 1)
+		self.assertEqual(Choice.objects.filter(question=question).count(), 1)
 		self.assertEqual(response.data["choice_text"], "New option")
 		self.assertEqual(response.data["votes"], 0)
 

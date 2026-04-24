@@ -11,10 +11,12 @@ class ChoiceSerializer(serializers.ModelSerializer):
 
 
 class QuestionListSerializer(serializers.ModelSerializer):
+    choice_count = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Question
-        fields = ("id", "question_text", "pub_date")
-        read_only_fields = ("id", "pub_date")
+        fields = ("id", "question_text", "pub_date", "choice_count")
+        read_only_fields = ("id", "pub_date", "choice_count")
 
 
 class QuestionDetailSerializer(QuestionListSerializer):

@@ -2,13 +2,35 @@ import datetime
 
 from django.conf import settings
 from django.db import models
+from django.db.models import Count
 from django.utils import timezone
+
+
+class QuestionQuerySet(models.QuerySet):
+    def with_choice_count(self):
+        return self.annotate(choice_count=Count("choice"))
+
+    def with_choices(self):
+        return self.prefetch_related("choice_set")
+
+
+class QuestionManager(models.Manager):
+    def get_queryset(self) -> QuestionQuerySet:
+        return QuestionQuerySet(self.model, using=self._db)
+
+    def with_choice_count(self) -> QuestionQuerySet:
+        return self.get_queryset().with_choice_count()
+
+    def with_choices(self) -> QuestionQuerySet:
+        return self.get_queryset().with_choices()
 
 
 class Question(models.Model):
     question_text = models.CharField(max_length=200)
     # auto_now_add sets the field to now when the object is first created.
     pub_date = models.DateTimeField("date published", auto_now_add=True)
+
+    objects = QuestionManager()
 
     def __str__(self):
         return self.question_text

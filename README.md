@@ -28,7 +28,7 @@ uv run celery -A mysite beat -l info
 
 ## Redis
 
-`redis.sh` is the default local helper. It starts `redis-broker` if the container already exists, or creates it with persistence if it does not. `docker compose up -d` uses the same container name and a persistent volume.
+`redis.sh` is the default local helper. It starts `redis-broker` if the container already exists, or creates it with persistence if it does not.
 
 For a quick temporary instance instead:
 
@@ -41,3 +41,17 @@ REDIS_MODE=quick bash redis.sh
 ```bash
 uv run pytest
 ```
+
+## Visit
+
+The admin and (API-driven) frontend lives at:
+
+```text
+http://127.0.0.1:8000/admin/
+http://127.0.0.1:8000/polls/
+http://127.0.0.1:8000/polls/api-frontend/
+```
+
+If you want to vote there, log in first through the existing Django admin session at `/admin/`. The page reads questions from `/api/polls/`, loads a selected question from `/api/polls/<id>/`, and posts votes to `/api/polls/<id>/vote/`.
+
+The classic tutorial pages remain available under `/polls/`, so you can compare the server-rendered flow with the API-driven version side by side.

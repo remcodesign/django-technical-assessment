@@ -118,6 +118,12 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+}
+
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULE = {
