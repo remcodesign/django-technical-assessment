@@ -91,7 +91,7 @@ class QuestionListViewTests(TestCase):
 		"""
 		question = Question.objects.create(question_text="Lonely question")
 
-		annotated_question = Question.objects.annotate(choice_count=Count("choice")).get(pk=question.pk)
+		annotated_question = Question.objects.with_choice_count().get(pk=question.pk)
 
 		self.assertEqual(getattr(annotated_question, "choice_count"), 0)
 
