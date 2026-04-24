@@ -1,10 +1,13 @@
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from unittest.mock import patch
 
-from .models import Choice, Question
+from .models import Choice, Question, UserVote
+
+User = get_user_model()
 
 
 # the extra comments in these tests are intentional: they explain the "why" behind each assertion and test case.
@@ -46,24 +49,98 @@ class VoteViewTests(TestCase):
 	the user-facing voting feature works end-to-end.
 	"""
 
-	def test_vote_increments_choice_votes(self) -> None:
+	def test_vote_creates_user_vote_and_increments_choice_votes(self) -> None:
 		"""
-		Validate that a POST to /polls/<id>/vote/ with a valid choice increments votes.
+		Validate that a logged-in POST creates a UserVote and increments the choice counter.
 		
 		How it works:
-		1. Create a Question and a Choice belonging to that Question.
-		2. Send a POST request to the vote URL with the choice's primary key.
-		3. Refresh the choice from the database (to see the updated votes field).
-		4. Assert: response is a redirect (302), and the choice's votes field is 1.
+		1. Create a Question, a Choice, and a user.
+		2. Log the user in and submit a POST to the vote URL.
+		3. Refresh the choice and inspect the created UserVote record.
+		4. Assert: response is a redirect (302), the choice votes increased, and the vote record exists.
 		
 		Why this matters:
-		The vote view is the main write operation for end users. It combines:
+		The vote view now does two things at once:
 		- Request parsing (extracting POST["choice"])
 		- Model relation validation (finding the choice via question.choice_set.get)
+		- Authenticated user tracking through an explicit UserVote row
 		- Atomic database update (using F("votes") + 1 to avoid race conditions)
 		- HTTP redirect (to prevent double-posting)
 		
 		If any of these pieces breaks, end users cannot vote. This test catches that.
+		"""
+		question = Question.objects.create(question_text="Favorite color?")
+		choice = Choice.objects.create(question=question, choice_text="Blue")
+		user = User.objects.create_user(username="voter", password="secret123")
+		self.client.force_login(user)
+
+		response = self.client.post(
+			reverse("polls:vote", args=(question.pk,)),
+			{"choice": choice.pk},
+		)
+
+		choice.refresh_from_db()
+
+		self.assertEqual(response.status_code, 302)
+		self.assertEqual(choice.votes, 1)
+		self.assertEqual(UserVote.objects.count(), 1)
+		vote = UserVote.objects.get()
+		self.assertEqual(vote.user, user)
+		self.assertEqual(vote.choice, choice)
+		self.assertEqual(vote.question, question)
+
+	def test_vote_rejects_second_vote_from_same_user_on_same_question(self) -> None:
+		"""
+		Validate that one authenticated user cannot vote twice on the same question.
+		
+		How it works:
+		1. Create one user, one question, and two choices for that question.
+		2. Submit a valid first vote.
+		3. Submit a second vote for the same question but a different choice.
+		4. Assert: the second response shows an error, only one UserVote exists, and the second choice stays unchanged.
+		
+		Why this matters:
+		The whole point of the explicit UserVote model is that the schema can now enforce
+		"one user, one vote per question". If we accidentally allow a second row, the
+		business rule is broken even if the UI still looks fine.
+		"""
+		question = Question.objects.create(question_text="Favorite color?")
+		first_choice = Choice.objects.create(question=question, choice_text="Blue")
+		second_choice = Choice.objects.create(question=question, choice_text="Green")
+		user = User.objects.create_user(username="double-voter", password="secret123")
+		self.client.force_login(user)
+
+		first_response = self.client.post(
+			reverse("polls:vote", args=(question.pk,)),
+			{"choice": first_choice.pk},
+		)
+		second_response = self.client.post(
+			reverse("polls:vote", args=(question.pk,)),
+			{"choice": second_choice.pk},
+		)
+
+		first_choice.refresh_from_db()
+		second_choice.refresh_from_db()
+
+		self.assertEqual(first_response.status_code, 302)
+		self.assertEqual(second_response.status_code, 200)
+		self.assertContains(second_response, "You already voted on this question.")
+		self.assertEqual(UserVote.objects.count(), 1)
+		self.assertEqual(first_choice.votes, 1)
+		self.assertEqual(second_choice.votes, 0)
+
+	def test_vote_rejects_anonymous_user(self) -> None:
+		"""
+		Validate that anonymous requests cannot create a UserVote.
+		
+		How it works:
+		1. Create a question and a choice.
+		2. Submit a POST without logging in.
+		3. Assert: the view shows a login error and no vote is stored.
+		
+		Why this matters:
+		Phase 5 is about individual user tracking, so we need a real user identity.
+		If anonymous voting still works, then the model exists but the requirement is not met.
 		"""
 		question = Question.objects.create(question_text="Favorite color?")
 		choice = Choice.objects.create(question=question, choice_text="Blue")
@@ -75,8 +152,10 @@ class VoteViewTests(TestCase):
 
 		choice.refresh_from_db()
 
-		self.assertEqual(response.status_code, 302)
-		self.assertEqual(choice.votes, 1)
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "You must be logged in to vote.")
+		self.assertEqual(UserVote.objects.count(), 0)
+		self.assertEqual(choice.votes, 0)
 
 	def test_vote_with_choice_from_other_question_shows_error(self) -> None:
 		"""
@@ -98,6 +177,8 @@ class VoteViewTests(TestCase):
 		question = Question.objects.create(question_text="Question one")
 		other_question = Question.objects.create(question_text="Question two")
 		other_choice = Choice.objects.create(question=other_question, choice_text="Mismatch")
+		user = User.objects.create_user(username="boundary-check", password="secret123")
+		self.client.force_login(user)
 
 		response = self.client.post(
 			reverse("polls:vote", args=(question.pk,)),
