@@ -1,5 +1,5 @@
 from django.db import IntegrityError, transaction
-from django.db.models import F
+from django.db.models import Count, F
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
@@ -13,8 +13,9 @@ class IndexView(generic.ListView):
     context_object_name = "latest_question_list"
 
     def get_queryset(self):
-        """Return the last five published questions."""
-        return Question.objects.order_by("-pub_date")[:10]
+        """Return the last ten published questions."""
+        # Keep the related choice count in SQL so the list page stays efficient.
+        return Question.objects.annotate(choice_count=Count("choice")).order_by("-pub_date")[:10]
 
 
 class DetailView(generic.DetailView):

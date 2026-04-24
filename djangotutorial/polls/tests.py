@@ -2,6 +2,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from django.contrib.auth import get_user_model
+from django.db.models import Count
 from rest_framework.test import APIClient
 from unittest.mock import patch
 
@@ -38,6 +39,94 @@ class QuestionModelTests(TestCase):
 		question = Question.objects.create(question_text="Recent question")
 
 		self.assertTrue(question.was_published_recently())
+
+
+class QuestionListViewTests(TestCase):
+	"""
+	Integration tests for the Question index page.
+
+	These tests verify both the rendered count and the query behavior, so we catch
+	functional regressions and accidental N+1 reintroductions at the same time.
+	"""
+
+	def test_index_view_shows_annotated_choice_count(self) -> None:
+		"""
+		Validate that the index page exposes the computed choice count.
+
+		How it works:
+		1. Create one question with two choices.
+		2. Request the index page.
+		3. Assert that the question in context has choice_count=2 and the template renders it.
+
+		Why this matters:
+		The phase is about computed fields on the top model. If the annotation is missing,
+		the list page either shows nothing or forces the count back into Python logic.
+		"""
+		question = Question.objects.create(question_text="Favorite color?")
+		Choice.objects.bulk_create(
+			[
+				Choice(question=question, choice_text="Blue"),
+				Choice(question=question, choice_text="Green"),
+			]
+		)
+
+		response = self.client.get(reverse("polls:index"))
+
+		latest_question_list = list(response.context["latest_question_list"])
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(latest_question_list[0].choice_count, 2)
+		self.assertContains(response, "2 choices")
+
+	def test_index_view_uses_one_query_for_multiple_questions(self) -> None:
+		"""
+		Validate that the list page does not fall back to per-row count queries.
+
+		How it works:
+		1. Create multiple questions, each with two choices.
+		2. Load the index page inside assertNumQueries(1).
+		3. Assert that the rendered page still shows the counts for every row.
+
+		Why this matters:
+		This is the cheap regression test for the N+1 problem. If somebody replaces the
+		annotation with a property or template-side count, the query count will jump.
+		"""
+		for index in range(3):
+			question = Question.objects.create(question_text=f"Question {index}")
+			Choice.objects.bulk_create(
+				[
+					Choice(question=question, choice_text=f"{index}-A"),
+					Choice(question=question, choice_text=f"{index}-B"),
+				]
+			)
+
+		# self.assertNumQueries(1) means that the entire page load, including rendering the template and accessing all context variables, 
+		# must execute at most 1 database query. If the view or template code causes additional queries ..
+		# (e.g., by accessing a related field without prefetching), this assertion will fail, indicating an N+1 query problem.
+		with self.assertNumQueries(1):
+			response = self.client.get(reverse("polls:index"))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, "2 choices", count=3)
+
+	def test_annotated_choice_count_defaults_to_zero(self) -> None:
+		"""
+		Validate that the annotation returns 0 for questions without choices.
+
+		How it works:
+		1. Create a question without related choices.
+		2. Reuse the same Count annotation the view uses.
+		3. Assert that the count is 0 instead of None or a missing attribute.
+
+		Why this matters:
+		Zero-related-object cases are easy to miss, but they are part of the public
+		behavior of a computed count and should stay stable.
+		"""
+		question = Question.objects.create(question_text="Lonely question")
+
+		annotated_question = Question.objects.annotate(choice_count=Count("choice")).get(pk=question.pk)
+
+		self.assertEqual(getattr(annotated_question, "choice_count"), 0)
 
 
 class VoteViewTests(TestCase):
