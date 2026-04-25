@@ -45,6 +45,14 @@ class Choice(models.Model):
     choice_text = models.CharField(max_length=200)
     votes = models.IntegerField(default=0)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("question", "choice_text"),
+                name="unique_choice_text_per_question",
+            ),
+        ]
+
     def __str__(self):
         return self.choice_text
 

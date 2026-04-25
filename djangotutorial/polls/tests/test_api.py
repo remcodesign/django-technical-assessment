@@ -10,6 +10,14 @@ from ..models import Choice, Question, UserVote
 User = get_user_model()
 
 
+def build_authenticated_csrf_client(username: str) -> tuple[APIClient, str]:
+	user = User.objects.create_user(username=username, password="secret123")
+	csrf_client = APIClient(enforce_csrf_checks=True)
+	csrf_client.force_login(user)
+	csrf_client.get(reverse("polls:api_frontend"))
+	return csrf_client, csrf_client.cookies["csrftoken"].value
+
+
 class PollsApiTests(TestCase):
 	"""
 	Integration tests for the REST API endpoints (DRF layer).
@@ -41,6 +49,10 @@ class PollsApiTests(TestCase):
 		self.assertIn("csrftoken", response.cookies)
 		self.assertContains(response, "cdn.jsdelivr.net/npm/alpinejs")
 		self.assertContains(response, "pollsFrontend")
+		self.assertContains(response, "Manage choices")
+		self.assertContains(response, "Add a choice")
+		self.assertContains(response, "Edit choice")
+		self.assertContains(response, "Save choice")
 
 	def test_api_question_detail_returns_nested_choices(self) -> None:
 		"""
@@ -72,6 +84,31 @@ class PollsApiTests(TestCase):
 		self.assertEqual(response.data["choices"][0]["id"], choice.pk)
 		self.assertEqual(response.data["choices"][0]["choice_text"], "Choice A")
 
+	def test_api_question_list_returns_fresh_choice_count_after_new_choice(self) -> None:
+		"""
+		Validate that repeated list requests do not reuse stale annotated queryset results.
+
+		Why this matters:
+		The API frontend sidebar reads the question list endpoint. If DRF reuses a cached
+		class-level queryset between requests, the sidebar can keep an old choice_count until
+		the development server restarts.
+		"""
+		question = Question.objects.create(question_text="Fresh count API question")
+		Choice.objects.create(question=question, choice_text="Choice A")
+
+		first_response: Any = self.client.get(reverse("polls_api:question-list"))
+		first_payload = next(item for item in first_response.data if item["id"] == question.pk)
+
+		Choice.objects.create(question=question, choice_text="Choice B")
+
+		second_response: Any = self.client.get(reverse("polls_api:question-list"))
+		second_payload = next(item for item in second_response.data if item["id"] == question.pk)
+
+		self.assertEqual(first_response.status_code, 200)
+		self.assertEqual(second_response.status_code, 200)
+		self.assertEqual(first_payload["choice_count"], 1)
+		self.assertEqual(second_payload["choice_count"], 2)
+
 	def test_api_add_choice_creates_choice_for_question(self) -> None:
 		"""
 		Validate that POST /api/polls/<id>/choices/ creates a new choice for the question.
@@ -94,17 +131,76 @@ class PollsApiTests(TestCase):
 		association, this test fails immediately.
 		"""
 		question = Question.objects.create(question_text="API write question")
+		csrf_client, csrf_token = build_authenticated_csrf_client("api-choice-creator")
 
-		response: Any = self.client.post(
+		response: Any = csrf_client.post(
 			reverse("polls_api:question-add-choice", kwargs={"pk": question.pk}),
 			{"choice_text": "New option"},
 			format="json",
+			HTTP_X_CSRFTOKEN=csrf_token,
 		)
 
 		self.assertEqual(response.status_code, 201)
 		self.assertEqual(Choice.objects.filter(question=question).count(), 1)
 		self.assertEqual(response.data["choice_text"], "New option")
 		self.assertEqual(response.data["votes"], 0)
+
+	def test_api_add_choice_rejects_duplicate_choice_text(self) -> None:
+		"""
+		Validate that duplicate choice text is rejected for the same question.
+		"""
+		question = Question.objects.create(question_text="Duplicate choice question")
+		Choice.objects.create(question=question, choice_text="Duplicate")
+		csrf_client, csrf_token = build_authenticated_csrf_client("api-choice-duplicate")
+
+		response: Any = csrf_client.post(
+			reverse("polls_api:question-add-choice", kwargs={"pk": question.pk}),
+			{"choice_text": "Duplicate"},
+			format="json",
+			HTTP_X_CSRFTOKEN=csrf_token,
+		)
+
+		self.assertEqual(response.status_code, 400)
+		self.assertIn("choice_text", response.data)
+		self.assertEqual(
+			response.data["choice_text"][0],
+			"A choice with this text already exists for this question.",
+		)
+		self.assertEqual(Choice.objects.filter(question=question, choice_text__iexact="Duplicate").count(), 1)
+
+	def test_api_update_choice_changes_choice_text(self) -> None:
+		"""
+		Validate that PATCH /api/polls/<id>/choices/<choice_id>/ updates a choice text.
+
+		How it works:
+		1. Create a question with one choice.
+		2. Send a PATCH request through the API frontend session flow.
+		3. Assert the response is 200 and the database record changes.
+
+		Why this matters:
+		This is the new round-2 write path. If routing, serializer write support, or
+		question/choice matching breaks, the API frontend cannot support choice editing.
+		"""
+		question = Question.objects.create(question_text="API choice update question")
+		choice = Choice.objects.create(question=question, choice_text="Old text")
+		csrf_client, csrf_token = build_authenticated_csrf_client("api-choice-editor")
+
+		response: Any = csrf_client.patch(
+			reverse(
+				"polls_api:question-update-choice",
+				kwargs={"pk": question.pk, "choice_id": choice.pk},
+			),
+			{"choice_text": "Updated text"},
+			format="json",
+			HTTP_X_CSRFTOKEN=csrf_token,
+		)
+
+		choice.refresh_from_db()
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["choice_text"], "Updated text")
+		self.assertEqual(choice.choice_text, "Updated text")
+		self.assertEqual(choice.votes, 0)
 
 
 class PollsApiVoteTests(TestCase):

@@ -9,6 +9,24 @@ class ChoiceSerializer(serializers.ModelSerializer):
         fields = ("id", "choice_text", "votes")
         read_only_fields = ("id", "votes")
 
+    def validate_choice_text(self, value: str) -> str:
+        question = self.context.get("question") or getattr(self.instance, "question", None)
+        normalized = value.strip()
+
+        if question is None:
+            return normalized
+
+        duplicates = Choice.objects.filter(question=question, choice_text__iexact=normalized)
+        if self.instance is not None:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+
+        if duplicates.exists():
+            raise serializers.ValidationError(
+                "A choice with this text already exists for this question."
+            )
+
+        return normalized
+
 
 class QuestionListSerializer(serializers.ModelSerializer):
     choice_count = serializers.IntegerField(read_only=True)

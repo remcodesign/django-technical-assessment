@@ -91,6 +91,133 @@
         font-size: 0.92rem;
       }
 
+      .choice-management {
+        margin-top: 1.25rem;
+        padding: 1rem;
+        background: #f8faf9;
+        border-radius: 1rem;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+      }
+
+      .choice-management h3,
+      .choice-management h4 {
+        margin-top: 0;
+        margin-bottom: 0.75rem;
+        color: #111827;
+      }
+
+      .choice-management form {
+        display: grid;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+      }
+
+      .choice-management label {
+        font-size: 0.95rem;
+        color: #374151;
+      }
+
+      .choice-management input[type="text"] {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.85rem 1rem;
+        border: 1px solid #d1d5db;
+        border-radius: 0.75rem;
+        background: #ffffff;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .choice-management input[type="text"]:focus {
+        outline: none;
+        border-color: #60a5fa;
+        box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.15);
+      }
+
+      .choice-management button {
+        width: fit-content;
+        border: none;
+        border-radius: 0.75rem;
+        padding: 0.7rem 1rem;
+        background: #1f2937;
+        color: #ffffff;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s ease;
+      }
+
+      .choice-management button:hover {
+        background: #111827;
+      }
+
+      .choice-management button[type="button"] {
+        background: #f3f4f6;
+        color: #111827;
+      }
+
+      .choice-management button[type="button"]:hover {
+        background: #e5e7eb;
+      }
+
+      .choice-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+      }
+
+      .choice-list li {
+        margin-bottom: 0.75rem;
+      }
+
+      .choice-row {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        padding: 0.85rem 1rem;
+        border-radius: 0.9rem;
+        border: 1px solid #e5e7eb;
+        background: #ffffff;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .choice-row:hover {
+        border-color: #cbd5e1;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+      }
+
+      .choice-row span {
+        flex: 1;
+        min-width: 0;
+        color: #111827;
+      }
+
+      .choice-row.editing {
+        padding-right: 0.75rem;
+      }
+
+      .choice-row.editing input[type="text"] {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .choice-row.editing .choice-actions {
+        gap: 0.5rem;
+      }
+
+      .choice-row.editing button[type="submit"] {
+        background: #2563eb;
+      }
+
+      .choice-row.editing button[type="submit"]:hover {
+        background: #1d4ed8;
+      }
+
+      .choice-row.editing button[type="button"] {
+        background: #f8fafc;
+        color: #111827;
+      }
+
       @media (max-width: 860px) {
         body {
           margin: 1rem;
@@ -139,10 +266,7 @@
                   <strong x-text="question.question_text"></strong>
                   <div class="stats">
                     <span x-text="question.choice_count"></span>
-                    choice
-                    <span
-                      x-text="question.choice_count === 1 ? '' : 's'"
-                    ></span>
+                    <span x-text="question.choice_count === 1 ? 'choice' : 'choices'"></span>
                   </div>
                 </button>
               </li>
@@ -163,7 +287,7 @@
                 </p>
               </template>
 
-              <template x-if="isAuthenticated">
+              <div x-show="isAuthenticated">
                 <template x-if="selectedQuestion.choices.length > 0">
                   <form @submit.prevent="vote()">
                     <fieldset>
@@ -195,16 +319,95 @@
                   </form>
                 </template>
 
+                <template x-if="errorMessage">
+                  <p class="error" x-text="errorMessage"></p>
+                </template>
+
                 <template
                   x-if="selectedQuestion.choices && selectedQuestion.choices.length === 0"
                 >
                   <p class="muted">This poll currently has no options.</p>
                 </template>
-              </template>
 
-              <template x-if="errorMessage">
-                <p class="error" x-text="errorMessage"></p>
-              </template>
+                <div class="choice-management">
+                  <h3>Manage choices</h3>
+                  <form @submit.prevent="createChoice()">
+                    <label for="new-choice-text">Add a choice</label>
+                    <input
+                      id="new-choice-text"
+                      type="text"
+                      maxlength="200"
+                      x-model="newChoiceText"
+                      placeholder="Enter new choice text"
+                    />
+                    <button type="submit">Add choice</button>
+                  </form>
+
+                  <template
+                    x-if="selectedQuestion.choices && selectedQuestion.choices.length > 0"
+                  >
+                    <div>
+                      <h4>Edit choice</h4>
+                      <ul class="choice-list">
+                        <template
+                          x-for="choice in selectedQuestion.choices"
+                          :key="choice.id"
+                        >
+                          <li>
+                            <template x-if="editingChoiceId === choice.id">
+                              <form
+                                class="choice-row editing"
+                                @submit.prevent="saveChoice(choice.id)"
+                                @focusout="handleChoiceFocusOut(choice.id)"
+                              >
+                                <input
+                                  :id="`edit-choice-${choice.id}`"
+                                  type="text"
+                                  maxlength="200"
+                                  x-model="editingChoiceText"
+                                  aria-label="Edit choice text"
+                                  @keydown.enter.prevent="saveChoice(choice.id)"
+                                  @keydown.escape.prevent="cancelEditChoice()"
+                                  autofocus
+                                />
+                                <div class="choice-actions">
+                                  <button
+                                    type="submit"
+                                    @mousedown="preventChoiceBlurSave()"
+                                  >
+                                    Save choice
+                                  </button>
+                                  <button
+                                    type="button"
+                                    @mousedown="preventChoiceBlurSave()"
+                                    @click="cancelEditChoice()"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
+                            </template>
+
+                            <template x-if="editingChoiceId !== choice.id">
+                              <div class="choice-row">
+                                <span x-text="choice.choice_text"></span>
+                                <div class="choice-actions">
+                                  <button
+                                    type="button"
+                                    @click="startEditChoice(choice)"
+                                  >
+                                    Edit
+                                  </button>
+                                </div>
+                              </div>
+                            </template>
+                          </li>
+                        </template>
+                      </ul>
+                    </div>
+                  </template>
+                </div>
+              </div>
             </div>
           </template>
 
@@ -252,6 +455,11 @@
           questions: [],
           selectedQuestion: null,
           selectedChoiceId: null,
+          newChoiceText: "",
+          editingChoiceId: null,
+          editingChoiceText: "",
+          ignoreChoiceBlurSave: false,
+          choiceBlurTimer: null,
           view: "index",
           errorMessage: "",
           loadError: "",
@@ -273,6 +481,79 @@
               .find((row) => row.startsWith("csrftoken="));
 
             return cookie ? decodeURIComponent(cookie.split("=")[1]) : "";
+          },
+
+          getApiErrorMessage(payload, fallbackMessage) {
+            return (
+              payload?.error_message ||
+              payload?.choice_text?.[0] ||
+              payload?.detail ||
+              fallbackMessage
+            );
+          },
+
+          async refreshSelectedQuestion() {
+            if (!this.selectedQuestion) {
+              return;
+            }
+
+            // Pull the latest nested choices after a write so the UI stays in sync.
+            const response = await fetch(
+              `${this.apiBaseUrl}${this.selectedQuestion.id}/`,
+              {
+                headers: {
+                  Accept: "application/json",
+                },
+              },
+            );
+
+            if (!response.ok) {
+              throw new Error("Could not refresh this poll.");
+            }
+
+            this.selectedQuestion = await response.json();
+            this.syncQuestionCount(this.selectedQuestion);
+          },
+
+          syncQuestionCount(updatedQuestion) {
+            if (!updatedQuestion) {
+              return;
+            }
+
+            const cacheEntry = this.questions.find(
+              (question) => question.id === updatedQuestion.id,
+            );
+            if (cacheEntry) {
+              cacheEntry.choice_count = updatedQuestion.choice_count;
+            }
+          },
+
+          startEditChoice(choice) {
+            this.editingChoiceId = choice.id;
+            this.editingChoiceText = choice.choice_text;
+          },
+
+          cancelEditChoice() {
+            this.editingChoiceId = null;
+            this.editingChoiceText = "";
+          },
+
+          preventChoiceBlurSave() {
+            this.ignoreChoiceBlurSave = true;
+          },
+
+          handleChoiceFocusOut(choiceId) {
+            clearTimeout(this.choiceBlurTimer);
+            this.choiceBlurTimer = setTimeout(() => {
+              if (this.ignoreChoiceBlurSave) {
+                this.ignoreChoiceBlurSave = false;
+                return;
+              }
+
+              if (this.editingChoiceId === choiceId) {
+                this.saveChoice(choiceId);
+              }
+            }, 120);
           },
 
           async loadQuestions() {
@@ -315,6 +596,8 @@
               }
 
               this.selectedQuestion = await response.json();
+              this.newChoiceText = "";
+              this.cancelEditChoice();
             } catch (error) {
               this.errorMessage = error.message;
             }
@@ -347,10 +630,10 @@
               const payload = await response.json();
 
               if (!response.ok) {
-                this.errorMessage =
-                  payload.error_message ||
-                  payload.detail ||
-                  "Could not submit your vote.";
+                this.errorMessage = this.getApiErrorMessage(
+                  payload,
+                  "Could not submit your vote.",
+                );
                 return;
               }
 
@@ -362,10 +645,97 @@
             }
           },
 
+          async createChoice() {
+            if (!this.newChoiceText.trim()) {
+              this.errorMessage = "Choice text is required.";
+              return;
+            }
+
+            this.errorMessage = "";
+
+            try {
+              const response = await fetch(
+                `${this.apiBaseUrl}${this.selectedQuestion.id}/choices/`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
+                    "X-CSRFToken": this.getCsrfToken(),
+                  },
+                  body: JSON.stringify({
+                    choice_text: this.newChoiceText.trim(),
+                  }),
+                },
+              );
+
+              const payload = await response.json();
+
+              if (!response.ok) {
+                this.errorMessage = this.getApiErrorMessage(
+                  payload,
+                  "Could not add this choice.",
+                );
+                return;
+              }
+
+              this.newChoiceText = "";
+              this.selectedChoiceId = null;
+              await this.refreshSelectedQuestion();
+              await this.loadQuestions();
+            } catch (error) {
+              this.errorMessage = "Could not add this choice.";
+            }
+          },
+
+          async saveChoice(choiceId) {
+            if (!this.editingChoiceText.trim()) {
+              this.errorMessage = "Choice text is required.";
+              return;
+            }
+
+            this.errorMessage = "";
+
+            try {
+              const response = await fetch(
+                `${this.apiBaseUrl}${this.selectedQuestion.id}/choices/${choiceId}/`,
+                {
+                  method: "PATCH",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
+                    "X-CSRFToken": this.getCsrfToken(),
+                  },
+                  body: JSON.stringify({
+                    choice_text: this.editingChoiceText.trim(),
+                  }),
+                },
+              );
+
+              const payload = await response.json();
+
+              if (!response.ok) {
+                this.errorMessage = this.getApiErrorMessage(
+                  payload,
+                  "Could not update this choice.",
+                );
+                return;
+              }
+
+              this.cancelEditChoice();
+              await this.refreshSelectedQuestion();
+              await this.loadQuestions();
+            } catch (error) {
+              this.errorMessage = "Could not update this choice.";
+            }
+          },
+
           backToIndex() {
             this.view = "index";
             this.selectedQuestion = null;
             this.selectedChoiceId = null;
+            this.newChoiceText = "";
+            this.cancelEditChoice();
             this.errorMessage = "";
           },
         };

@@ -1,5 +1,4 @@
-from django.db import IntegrityError, transaction
-from django.db.models import F
+from django.shortcuts import get_object_or_404
 from typing import cast
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -17,12 +16,19 @@ from .services import (
 
 
 class QuestionViewSet(viewsets.ModelViewSet):
-    queryset = cast(QuestionManager, Question.objects).with_choice_count().order_by("-pub_date")
+    # The base queryset is empty since the list and detail views require different annotations for optimal performance.
+    queryset = Question.objects.none()
+
+    def _fresh_detail_payload(self, question: Question):
+        # Re-query the question so the response always includes the latest nested choices and counts.
+        fresh_question = Question.objects.with_choice_count().with_choices().get(pk=question.pk)
+        return QuestionDetailSerializer(fresh_question).data
 
     def get_queryset(self):  # type: ignore[override]
+        queryset = cast(QuestionManager, Question.objects).with_choice_count().order_by("-pub_date")
         if self.action in {"retrieve", "vote"}:
-            return self.queryset.with_choices()
-        return self.queryset
+            return queryset.with_choices()
+        return queryset
 
     def get_serializer_class(self):  # type: ignore[override]
         if self.action in {"retrieve", "vote"}:
@@ -51,14 +57,26 @@ class QuestionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        # Re-query so the response contains the fresh vote totals.
-        fresh_question = Question.objects.with_choice_count().with_choices().get(pk=question.pk)
-        return Response(QuestionDetailSerializer(fresh_question).data, status=status.HTTP_200_OK)
+        return Response(self._fresh_detail_payload(question), status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="choices")
     def add_choice(self, request, pk=None):
         question = self.get_object()
-        serializer = ChoiceSerializer(data=request.data)
+        serializer = ChoiceSerializer(data=request.data, context={"question": question})
         serializer.is_valid(raise_exception=True)
         serializer.save(question=question)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["patch"], url_path=r"choices/(?P<choice_id>[^/.]+)")
+    def update_choice(self, request, pk=None, choice_id=None):
+        question = self.get_object()
+        choice = get_object_or_404(Choice, pk=choice_id, question=question)
+        serializer = ChoiceSerializer(
+            choice,
+            data=request.data,
+            partial=True,
+            context={"question": question},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
