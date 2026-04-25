@@ -299,6 +299,27 @@ main {
   margin-bottom: 1rem;
 }
 
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.form-actions button {
+  cursor: pointer;
+}
+
+.secondary-button {
+    border: 1px solid #d1d5db;
+    background: #f3f4f6;
+    color: #111827;  
+}
+
+.secondary-button:hover {
+  background: #e5e7eb;
+}
+
 .choice-management label {
   font-size: 0.95rem;
   color: #374151;

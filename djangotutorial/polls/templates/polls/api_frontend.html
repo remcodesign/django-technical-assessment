@@ -136,9 +136,18 @@
                       </p>
                     </template>
 
-                    <button type="submit" :disabled="selectedQuestion.user_choice_id">
-                      Vote
-                    </button>
+                    <div class="form-actions">
+                      <button type="submit" :disabled="selectedQuestion.user_choice_id">
+                        Vote
+                      </button>
+                      <button
+                        type="button"
+                        class="secondary-button"
+                        @click="viewResults()"
+                      >
+                        View results
+                      </button>
+                    </div>
                   </form>
                 </template>
 
@@ -261,8 +270,8 @@
                   </li>
                 </template>
               </ul>
-              <button type="button" @click="backToIndex()">
-                Back to polls
+              <button type="button" @click="backToChoices()">
+                Back to choices
               </button>
             </div>
           </template>

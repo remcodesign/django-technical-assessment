@@ -450,5 +450,20 @@ window.pollsFrontend = function pollsFrontend() {
       this.cancelEditChoice();
       this.errorMessage = "";
     },
+
+    backToChoices() {
+      this.view = "detail";
+      this.errorMessage = "";
+    },
+
+    viewResults() {
+      if (!this.selectedQuestion) {
+        this.errorMessage = "No poll selected.";
+        return;
+      }
+
+      this.view = "results";
+      this.errorMessage = "";
+    },
   };
 };
