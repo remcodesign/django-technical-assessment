@@ -5,7 +5,7 @@ from typing import Any
 
 from rest_framework.test import APIClient
 
-from ..models import Choice, Question, UserVote
+from ..models import AuditLog, Choice, Question, UserVote
 
 User = get_user_model()
 
@@ -51,6 +51,11 @@ class PollsApiTests(TestCase):
 		self.assertContains(response, "polls/api_frontend.js")
 		self.assertContains(response, "cdn.jsdelivr.net/npm/alpinejs")
 		self.assertContains(response, "pollsFrontend")
+		self.assertContains(response, "Audit log")
+		self.assertContains(response, "User")
+		self.assertContains(response, "Model")
+		self.assertContains(response, "Event")
+		self.assertContains(response, "Reset filters")
 		self.assertContains(response, "Manage choices")
 		self.assertContains(response, "Add a choice")
 		self.assertContains(response, "Edit choice")
@@ -147,6 +152,13 @@ class PollsApiTests(TestCase):
 		self.assertEqual(Choice.objects.filter(question=question).count(), 1)
 		self.assertEqual(response.data["choice_text"], "New option")
 		self.assertEqual(response.data["votes"], 0)
+		self.assertEqual(AuditLog.objects.count(), 1)
+		audit_log = AuditLog.objects.get()
+		self.assertEqual(audit_log.user, User.objects.get(username="api-choice-creator"))
+		self.assertEqual(audit_log.model, "Choice")
+		self.assertEqual(audit_log.event, "create")
+		self.assertEqual(audit_log.object_id, str(response.data["id"]))
+		self.assertIn('"choice_text": "New option"', audit_log.change_to)
 
 	def test_api_add_choice_rejects_duplicate_choice_text(self) -> None:
 		"""
@@ -170,6 +182,38 @@ class PollsApiTests(TestCase):
 			"A choice with this text already exists for this question.",
 		)
 		self.assertEqual(Choice.objects.filter(question=question, choice_text__iexact="Duplicate").count(), 1)
+		self.assertEqual(AuditLog.objects.count(), 0)
+
+	def test_api_audit_user_list_returns_distinct_usernames(self) -> None:
+		"""
+		Validate that the audit users endpoint returns the available actor names.
+		"""
+		user_one = User.objects.create_user(username="audit-user-one", password="secret123")
+		user_two = User.objects.create_user(username="audit-user-two", password="secret123")
+		question = Question.objects.create(question_text="Audit user endpoint question")
+		Choice.objects.create(question=question, choice_text="Option A")
+
+		AuditLog.objects.create(
+			user=user_one,
+			model="Choice",
+			event="create",
+			object_id="1",
+			change_from="{}",
+			change_to='{"choice_text": "Option A"}',
+		)
+		AuditLog.objects.create(
+			user=user_two,
+			model="UserVote",
+			event="vote",
+			object_id="2",
+			change_from="{}",
+			change_to='{"choice_id": 1}',
+		)
+
+		response: Any = self.client.get(reverse("polls_api:auditlog-users"))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data, ["audit-user-one", "audit-user-two"])
 
 	def test_api_update_choice_changes_choice_text(self) -> None:
 		"""
@@ -204,6 +248,14 @@ class PollsApiTests(TestCase):
 		self.assertEqual(response.data["choice_text"], "Updated text")
 		self.assertEqual(choice.choice_text, "Updated text")
 		self.assertEqual(choice.votes, 0)
+		self.assertEqual(AuditLog.objects.count(), 1)
+		audit_log = AuditLog.objects.get()
+		self.assertEqual(audit_log.user, User.objects.get(username="api-choice-editor"))
+		self.assertEqual(audit_log.model, "Choice")
+		self.assertEqual(audit_log.event, "update")
+		self.assertEqual(audit_log.object_id, str(choice.pk))
+		self.assertIn('"choice_text": "Old text"', audit_log.change_from)
+		self.assertIn('"choice_text": "Updated text"', audit_log.change_to)
 
 	def test_api_delete_choice_removes_choice_for_question(self) -> None:
 		"""
@@ -233,6 +285,14 @@ class PollsApiTests(TestCase):
 
 		self.assertEqual(response.status_code, 204)
 		self.assertFalse(Choice.objects.filter(pk=choice.pk).exists())
+		self.assertEqual(AuditLog.objects.count(), 1)
+		audit_log = AuditLog.objects.get()
+		self.assertEqual(audit_log.user, User.objects.get(username="api-choice-deleter"))
+		self.assertEqual(audit_log.model, "Choice")
+		self.assertEqual(audit_log.event, "delete")
+		self.assertEqual(audit_log.object_id, str(choice.pk))
+		self.assertIn('"choice_text": "Temporary text"', audit_log.change_from)
+		self.assertIn('"deleted": true', audit_log.change_to)
 
 
 class PollsApiVoteTests(TestCase):
@@ -282,6 +342,13 @@ class PollsApiVoteTests(TestCase):
 		self.assertEqual(UserVote.objects.count(), 1)
 		self.assertEqual(response.data["choices"][0]["votes"], 1)
 		self.assertEqual(response.data["user_choice_id"], choice.pk)
+		self.assertEqual(AuditLog.objects.count(), 1)
+		audit_log = AuditLog.objects.get()
+		self.assertEqual(audit_log.user, user)
+		self.assertEqual(audit_log.model, "UserVote")
+		self.assertEqual(audit_log.event, "vote")
+		self.assertEqual(audit_log.object_id, str(UserVote.objects.get().pk))
+		self.assertIn('"choice_id": ', audit_log.change_to)
 
 	def test_api_question_detail_includes_user_choice_id_for_authenticated_user(self) -> None:
 		question = Question.objects.create(question_text="Selected choice API question")
@@ -336,6 +403,8 @@ class PollsApiVoteTests(TestCase):
 		self.assertEqual(first_choice.votes, 1)
 		self.assertEqual(second_choice.votes, 0)
 		self.assertEqual(UserVote.objects.count(), 1)
+		self.assertEqual(AuditLog.objects.count(), 1)
+
 	def test_api_vote_rejects_anonymous_user(self) -> None:
 		"""
 		Validate that the API vote endpoint rejects unauthenticated requests.
@@ -364,6 +433,7 @@ class PollsApiVoteTests(TestCase):
 		self.assertEqual(response.data["error_message"], "You must be logged in to vote.")
 		self.assertEqual(UserVote.objects.count(), 0)
 		self.assertEqual(choice.votes, 0)
+		self.assertEqual(AuditLog.objects.count(), 0)
 
 	def test_api_vote_rejects_invalid_choice(self) -> None:
 		"""
@@ -402,3 +472,4 @@ class PollsApiVoteTests(TestCase):
 		self.assertEqual(response.data["error_message"], "You didn't select a choice.")
 		self.assertEqual(other_choice.votes, 0)
 		self.assertEqual(UserVote.objects.count(), 0)
+		self.assertEqual(AuditLog.objects.count(), 0)

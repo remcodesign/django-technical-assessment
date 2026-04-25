@@ -18,6 +18,7 @@
       x-init="init()"
       x-cloak
       data-api-base-url="{{ api_base_url|escape }}"
+      data-audit-base-url="{{ audit_base_url|escape }}"
       data-is-authenticated="{{ request.user.is_authenticated|yesno:'true,false' }}"
     >
       <h1>Polls API Frontend</h1>
@@ -25,11 +26,30 @@
         This page reads and writes through the REST API instead of Django forms.
       </p>
 
+      <div class="tabs" role="tablist" aria-label="Polls and audit navigation">
+        <button
+          type="button"
+          class="tab-button"
+          :class="{ active: activeTab === 'polls' }"
+          @click="switchTab('polls')"
+        >
+          Polls
+        </button>
+        <button
+          type="button"
+          class="tab-button"
+          :class="{ active: activeTab === 'audit' }"
+          @click="switchTab('audit')"
+        >
+          Audit log
+        </button>
+      </div>
+
       <template x-if="loadError">
         <p class="error" x-text="loadError"></p>
       </template>
 
-      <div class="layout">
+      <div class="layout" x-show="activeTab === 'polls'" x-cloak>
         <section class="panel sticky">
           <h2>Polls</h2>
           <template x-if="loadingQuestions">
@@ -254,6 +274,117 @@
           </template>
         </section>
       </div>
+
+      <section class="panel audit-panel" x-show="activeTab === 'audit'" x-cloak>
+        <h2>Audit log</h2>
+        <p class="muted">
+          Review who changed which poll data, with paging and simple filters.
+        </p>
+        <div class="audit-header">
+          <p class="muted audit-count">
+            Total
+            <strong x-text="auditCount"></strong>
+            entries
+          </p>
+          <button type="button" class="reset-count-button" @click="resetAuditFilters()">
+            Reset filters
+          </button>
+        </div>
+
+        <div class="audit-controls">
+          <label>
+            <span>User</span>
+            <input
+              type="text"
+              list="audit-users"
+              placeholder="Username"
+              x-model="auditUserFilter"
+              @input.debounce.250ms="loadAuditLogs()"
+            />
+            <datalist id="audit-users">
+              <template x-for="user in auditUserOptions" :key="user">
+                <option :value="user"></option>
+              </template>
+            </datalist>
+          </label>
+
+          <label>
+            <span>Model</span>
+            <select x-model="auditModelFilter" @change="loadAuditLogs()">
+              <option value="">All models</option>
+              <option value="Choice">Choice</option>
+              <option value="UserVote">UserVote</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Event</span>
+            <select x-model="auditEventFilter" @change="loadAuditLogs()">
+              <option value="">All events</option>
+              <option value="vote">vote</option>
+              <option value="create">create</option>
+              <option value="update">update</option>
+              <option value="delete">delete</option>
+            </select>
+          </label>
+        </div>
+
+        <template x-if="auditLoading">
+          <p>Loading audit log...</p>
+        </template>
+
+        <template x-if="auditError">
+          <p class="error" x-text="auditError"></p>
+        </template>
+
+        <template x-if="!auditLoading && auditEntries.length === 0">
+          <p class="muted">No audit entries found for the current filters.</p>
+        </template>
+
+        <ul class="audit-list">
+          <template x-for="entry in auditEntries" :key="entry.id">
+            <li class="audit-card">
+              <div class="audit-card-header">
+                <strong
+                  class="audit-actor"
+                  @click="setAuditUserFilter(entry.actor)"
+                  title="Filter by this user"
+                  x-text="entry.actor"
+                ></strong>
+                <span class="audit-badge audit-badge-model" x-text="entry.model"></span>
+                <span class="audit-badge audit-badge-event" x-text="entry.event"></span>
+                <span x-text="entry.created_at"></span>
+              </div>
+
+              <div class="audit-card-body">
+                <p>
+                  <span class="muted">Object</span>
+                  <strong x-text="entry.object_id"></strong>
+                </p>
+
+                <p>
+                  <span class="muted">From</span>
+                  <code class="audit-snapshot" x-text="entry.change_from || '-' "></code>
+                </p>
+
+                <p>
+                  <span class="muted">To</span>
+                  <code class="audit-snapshot" x-text="entry.change_to || '-' "></code>
+                </p>
+              </div>
+            </li>
+          </template>
+        </ul>
+
+        <div class="audit-pagination">
+          <button type="button" :disabled="!auditPreviousUrl" @click="previousAuditPage()">
+            Previous
+          </button>
+          <button type="button" :disabled="!auditNextUrl" @click="nextAuditPage()">
+            Next
+          </button>
+        </div>
+      </section>
     </main>
   </body>
 </html>

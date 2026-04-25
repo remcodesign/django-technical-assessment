@@ -43,6 +43,7 @@ def api_frontend(request):
         "polls/api_frontend.html",
         {
             "api_base_url": reverse("polls_api:question-list"),
+            "audit_base_url": reverse("polls_api:auditlog-list"),
         },
     )
 

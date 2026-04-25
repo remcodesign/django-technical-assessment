@@ -3,7 +3,7 @@ from django.db.models import Count
 from django.test import TestCase
 from django.urls import reverse
 
-from ..models import Choice, Question, UserVote
+from ..models import AuditLog, Choice, Question, UserVote
 
 User = get_user_model()
 
@@ -144,6 +144,12 @@ class VoteViewTests(TestCase):
 		self.assertEqual(vote.user, user)
 		self.assertEqual(vote.choice, choice)
 		self.assertEqual(vote.question, question)
+		self.assertEqual(AuditLog.objects.count(), 1)
+		audit_log = AuditLog.objects.get()
+		self.assertEqual(audit_log.user, user)
+		self.assertEqual(audit_log.model, "UserVote")
+		self.assertEqual(audit_log.event, "vote")
+		self.assertEqual(audit_log.object_id, str(vote.pk))
 
 	def test_vote_rejects_duplicate_vote(self) -> None:
 		"""
@@ -184,6 +190,7 @@ class VoteViewTests(TestCase):
 		self.assertEqual(UserVote.objects.count(), 1)
 		self.assertEqual(first_choice.votes, 1)
 		self.assertEqual(second_choice.votes, 0)
+		self.assertEqual(AuditLog.objects.count(), 1)
 
 	def test_vote_rejects_anonymous_user(self) -> None:
 		"""
@@ -212,6 +219,7 @@ class VoteViewTests(TestCase):
 		self.assertContains(response, "You must be logged in to vote.")
 		self.assertEqual(UserVote.objects.count(), 0)
 		self.assertEqual(choice.votes, 0)
+		self.assertEqual(AuditLog.objects.count(), 0)
 
 	def test_vote_rejects_invalid_choice(self) -> None:
 		"""
@@ -247,3 +255,4 @@ class VoteViewTests(TestCase):
 		self.assertEqual(response.status_code, 200)
 		self.assertContains(response, "You didn&#x27;t select a choice.")
 		self.assertEqual(other_choice.votes, 0)
+		self.assertEqual(AuditLog.objects.count(), 0)

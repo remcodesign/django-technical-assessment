@@ -1,18 +1,67 @@
 from django.shortcuts import get_object_or_404
 from typing import cast
-from rest_framework import status, viewsets
+from django.db import transaction
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
-from .models import Choice, Question, QuestionManager
-from .serializers import ChoiceSerializer, QuestionDetailSerializer, QuestionListSerializer
+from .models import AuditLog, Choice, Question, QuestionManager
+from .serializers import (
+    AuditLogSerializer,
+    ChoiceSerializer,
+    QuestionDetailSerializer,
+    QuestionListSerializer,
+)
 from .services import (
     DuplicateVote,
     InvalidChoice,
     MissingChoice,
     UserNotAuthenticated,
     cast_vote,
+    format_audit_change,
+    record_audit_event,
 )
+
+
+class AuditLogPagination(PageNumberPagination):
+    page_size = 5
+    page_size_query_param = "page_size"
+    max_page_size = 25
+
+
+class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    queryset = AuditLog.objects.all()
+    serializer_class = AuditLogSerializer
+    pagination_class = AuditLogPagination
+
+    def get_queryset(self):  # type: ignore[override]
+        queryset = AuditLog.objects.select_related("user").order_by("-created_at", "-pk")
+        query_params = getattr(self.request, "query_params", {})
+        user_filter = query_params.get("user")
+        model_filter = query_params.get("model")
+        event_filter = query_params.get("event")
+
+        if user_filter:
+            queryset = queryset.filter(user__username__iexact=user_filter.strip())
+
+        if model_filter:
+            queryset = queryset.filter(model__iexact=model_filter.strip())
+
+        if event_filter:
+            queryset = queryset.filter(event__iexact=event_filter.strip())
+
+        return queryset
+
+    @action(detail=False, methods=["get"], url_path="users")
+    def users(self, request):
+        usernames = (
+            AuditLog.objects.filter(user__isnull=False)
+            .order_by("user__username")
+            .values_list("user__username", flat=True)
+            .distinct()
+        )
+        return Response(list(usernames))
 
 
 class QuestionViewSet(viewsets.ModelViewSet):
@@ -21,7 +70,8 @@ class QuestionViewSet(viewsets.ModelViewSet):
 
     def _fresh_detail_payload(self, question: Question):
         # Re-query the question so the response always includes the latest nested choices and counts.
-        fresh_question = Question.objects.with_choice_count().with_choices().get(pk=question.pk)
+        question_manager = cast(QuestionManager, Question.objects)
+        fresh_question = question_manager.with_choice_count().with_choices().get(pk=question.pk)
         return QuestionDetailSerializer(
             fresh_question,
             context=self.get_serializer_context(),
@@ -37,6 +87,15 @@ class QuestionViewSet(viewsets.ModelViewSet):
         if self.action in {"retrieve", "vote"}:
             return QuestionDetailSerializer
         return QuestionListSerializer
+
+    def _require_authenticated_choice_writer(self, request):
+        if request.user.is_authenticated:
+            return None
+
+        return Response(
+            {"error_message": "You must be logged in to manage choices."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     @action(detail=True, methods=["post"], url_path="vote")
     def vote(self, request, pk=None):
@@ -64,16 +123,38 @@ class QuestionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="choices")
     def add_choice(self, request, pk=None):
+        auth_response = self._require_authenticated_choice_writer(request)
+        if auth_response is not None:
+            return auth_response
+
         question = self.get_object()
         serializer = ChoiceSerializer(data=request.data, context={"question": question})
         serializer.is_valid(raise_exception=True)
-        serializer.save(question=question)
+
+        with transaction.atomic():
+            choice = serializer.save(question=question)
+            record_audit_event(
+                request.user,
+                model_name="Choice",
+                object_id=choice.pk,
+                event="create",
+                change_to=format_audit_change(
+                    choice_text=choice.choice_text,
+                    question_id=question.pk,
+                ),
+            )
+
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["patch"], url_path=r"choices/(?P<choice_id>[^/.]+)")
     def update_choice(self, request, pk=None, choice_id=None):
+        auth_response = self._require_authenticated_choice_writer(request)
+        if auth_response is not None:
+            return auth_response
+
         question = self.get_object()
         choice = get_object_or_404(Choice, pk=choice_id, question=question)
+        previous_choice_text = choice.choice_text
         serializer = ChoiceSerializer(
             choice,
             data=request.data,
@@ -81,12 +162,39 @@ class QuestionViewSet(viewsets.ModelViewSet):
             context={"question": question},
         )
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+
+        with transaction.atomic():
+            choice = serializer.save()
+            record_audit_event(
+                request.user,
+                model_name="Choice",
+                object_id=choice.pk,
+                event="update",
+                change_from=format_audit_change(choice_text=previous_choice_text),
+                change_to=format_audit_change(choice_text=choice.choice_text),
+            )
+
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    @update_choice.mapping.delete
+    @update_choice.mapping.delete  # type: ignore[attr-defined]
     def delete_choice(self, request, pk=None, choice_id=None):
+        auth_response = self._require_authenticated_choice_writer(request)
+        if auth_response is not None:
+            return auth_response
+
         question = self.get_object()
         choice = get_object_or_404(Choice, pk=choice_id, question=question)
-        choice.delete()
+
+        with transaction.atomic():
+            previous_choice_text = choice.choice_text
+            choice.delete()
+            record_audit_event(
+                request.user,
+                model_name="Choice",
+                object_id=choice_id,
+                event="delete",
+                change_from=format_audit_change(choice_text=previous_choice_text),
+                change_to=format_audit_change(deleted=True),
+            )
+
         return Response(status=status.HTTP_204_NO_CONTENT)

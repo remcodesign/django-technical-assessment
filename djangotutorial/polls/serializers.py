@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Choice, Question
+from .models import AuditLog, Choice, Question
 
 
 class ChoiceSerializer(serializers.ModelSerializer):
@@ -51,3 +51,21 @@ class QuestionDetailSerializer(QuestionListSerializer):
 
         vote = question.user_votes.filter(user=request.user).select_related("choice").first()
         return vote.choice_id if vote is not None else None
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    actor = serializers.CharField(source="user.username", read_only=True)
+
+    class Meta:
+        model = AuditLog
+        fields = (
+            "id",
+            "actor",
+            "model",
+            "object_id",
+            "event",
+            "change_from",
+            "change_to",
+            "created_at",
+        )
+        read_only_fields = fields

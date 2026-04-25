@@ -86,3 +86,27 @@ class UserVote(models.Model):
 
     def __str__(self):
         return f"{self.user} voted for {self.choice} on {self.question}"
+
+
+class AuditLog(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="audit_logs",
+    )
+    model = models.CharField(max_length=64, db_index=True)
+    object_id = models.CharField(max_length=64, db_index=True)
+    event = models.CharField(max_length=32, db_index=True)
+    change_from = models.TextField(blank=True, default="")
+    change_to = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        indexes = [
+            models.Index(fields=("model", "event")),
+            models.Index(fields=("user", "-created_at")),
+        ]
+
+    def __str__(self):
+        return f"{self.user} {self.event} {self.model}#{self.object_id}"

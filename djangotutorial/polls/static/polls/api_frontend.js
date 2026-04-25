@@ -1,7 +1,9 @@
 window.pollsFrontend = function pollsFrontend() {
   return {
     apiBaseUrl: "",
+    auditBaseUrl: "",
     isAuthenticated: false,
+    activeTab: "polls",
     loadingQuestions: false,
     questions: [],
     selectedQuestion: null,
@@ -14,6 +16,16 @@ window.pollsFrontend = function pollsFrontend() {
     view: "index",
     errorMessage: "",
     loadError: "",
+    auditLoading: false,
+    auditEntries: [],
+    auditNextUrl: null,
+    auditPreviousUrl: null,
+    auditError: "",
+    auditCount: 0,
+    auditUserOptions: [],
+    auditUserFilter: "",
+    auditModelFilter: "",
+    auditEventFilter: "",
     hasLoadedQuestions: false,
 
     async init() {
@@ -21,11 +33,17 @@ window.pollsFrontend = function pollsFrontend() {
         return;
       }
 
-      const { apiBaseUrl = "", isAuthenticated = "false" } = this.$el.dataset;
+      const {
+        apiBaseUrl = "",
+        auditBaseUrl = "",
+        isAuthenticated = "false",
+      } = this.$el.dataset;
       this.apiBaseUrl = apiBaseUrl;
+      this.auditBaseUrl = auditBaseUrl;
       this.isAuthenticated = isAuthenticated === "true";
       this.hasLoadedQuestions = true;
       await this.loadQuestions();
+      await this.loadAuditUsers();
     },
 
     getCsrfToken() {
@@ -83,6 +101,112 @@ window.pollsFrontend = function pollsFrontend() {
       }
     },
 
+    switchTab(tabName) {
+      this.activeTab = tabName;
+
+      if (tabName === "polls") {
+        return;
+      }
+
+      this.loadAuditLogs();
+    },
+
+    buildAuditUrl(pageUrl = "") {
+      if (pageUrl) {
+        return pageUrl;
+      }
+
+      const url = new URL(this.auditBaseUrl, window.location.origin);
+
+      if (this.auditUserFilter) {
+        url.searchParams.set("user", this.auditUserFilter.trim());
+      }
+
+      if (this.auditModelFilter) {
+        url.searchParams.set("model", this.auditModelFilter);
+      }
+
+      if (this.auditEventFilter) {
+        url.searchParams.set("event", this.auditEventFilter);
+      }
+
+      return url.toString();
+    },
+
+    resetAuditFilters() {
+      this.auditUserFilter = "";
+      this.auditModelFilter = "";
+      this.auditEventFilter = "";
+      this.loadAuditLogs();
+    },
+
+    async loadAuditUsers() {
+      try {
+        const response = await fetch(`${this.auditBaseUrl}users/`, {
+          headers: {
+            Accept: "application/json",
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error("Could not load audit users.");
+        }
+
+        this.auditUserOptions = await response.json();
+      } catch (error) {
+        // fail silently; the filter can still be typed manually
+        this.auditUserOptions = [];
+      }
+    },
+
+    setAuditUserFilter(username) {
+      this.auditUserFilter = username;
+      this.loadAuditLogs();
+    },
+
+    async loadAuditLogs(pageUrl = "") {
+      this.auditLoading = true;
+      this.auditError = "";
+
+      try {
+        const response = await fetch(this.buildAuditUrl(pageUrl), {
+          headers: {
+            Accept: "application/json",
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error("Could not load audit log.");
+        }
+
+        const payload = await response.json();
+        this.auditEntries = payload.results ?? [];
+        this.auditNextUrl = payload.next;
+        this.auditPreviousUrl = payload.previous;
+        this.auditCount = payload.count ?? 0;
+      } catch (error) {
+        this.auditError = error.message || "Could not load audit log.";
+      } finally {
+        this.auditLoading = false;
+      }
+    },
+
+    async nextAuditPage() {
+      if (!this.auditNextUrl) {
+        return;
+      }
+
+      await this.loadAuditLogs(this.auditNextUrl);
+    },
+
+    async previousAuditPage() {
+      if (!this.auditPreviousUrl) {
+        return;
+      }
+
+      await this.loadAuditLogs(this.auditPreviousUrl);
+    },
+
     startEditChoice(choice) {
       this.editingChoiceId = choice.id;
       this.editingChoiceText = choice.choice_text;
@@ -137,6 +261,7 @@ window.pollsFrontend = function pollsFrontend() {
     async openQuestion(questionId) {
       this.errorMessage = "";
       this.selectedChoiceId = null;
+      this.activeTab = "polls";
       this.view = "detail";
 
       try {
