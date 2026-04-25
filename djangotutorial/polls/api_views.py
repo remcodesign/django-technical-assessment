@@ -4,7 +4,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import Choice, Question, QuestionManager, UserVote
+from .models import Choice, Question, QuestionManager
 from .serializers import ChoiceSerializer, QuestionDetailSerializer, QuestionListSerializer
 from .services import (
     DuplicateVote,
@@ -80,3 +80,10 @@ class QuestionViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @update_choice.mapping.delete
+    def delete_choice(self, request, pk=None, choice_id=None):
+        question = self.get_object()
+        choice = get_object_or_404(Choice, pk=choice_id, question=question)
+        choice.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

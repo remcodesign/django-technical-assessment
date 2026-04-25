@@ -53,6 +53,7 @@ class PollsApiTests(TestCase):
 		self.assertContains(response, "Add a choice")
 		self.assertContains(response, "Edit choice")
 		self.assertContains(response, "Save choice")
+		self.assertContains(response, "Delete")
 
 	def test_api_question_detail_returns_nested_choices(self) -> None:
 		"""
@@ -201,6 +202,35 @@ class PollsApiTests(TestCase):
 		self.assertEqual(response.data["choice_text"], "Updated text")
 		self.assertEqual(choice.choice_text, "Updated text")
 		self.assertEqual(choice.votes, 0)
+
+	def test_api_delete_choice_removes_choice_for_question(self) -> None:
+		"""
+		Validate that DELETE /api/polls/<id>/choices/<choice_id>/ removes the choice.
+
+		How it works:
+		1. Create a question with one choice.
+		2. Send a DELETE request through the API frontend session flow.
+		3. Assert the response is 204 and the database record is gone.
+
+		Why this matters:
+		The delete action is the last missing CRUD operation in the API frontend.
+		If routing or the question-scoped lookup breaks, a choice could not be removed
+		from the selected question.
+		"""
+		question = Question.objects.create(question_text="API choice delete question")
+		choice = Choice.objects.create(question=question, choice_text="Temporary text")
+		csrf_client, csrf_token = build_authenticated_csrf_client("api-choice-deleter")
+
+		response: Any = csrf_client.delete(
+			reverse(
+				"polls_api:question-update-choice",
+				kwargs={"pk": question.pk, "choice_id": choice.pk},
+			),
+			HTTP_X_CSRFTOKEN=csrf_token,
+		)
+
+		self.assertEqual(response.status_code, 204)
+		self.assertFalse(Choice.objects.filter(pk=choice.pk).exists())
 
 
 class PollsApiVoteTests(TestCase):

@@ -143,11 +143,21 @@
         color: #ffffff;
         font-weight: 600;
         cursor: pointer;
-        transition: background 0.2s ease;
+        transition: background 0.2s ease, transform 0.2s ease;
       }
 
       .choice-management button:hover {
         background: #111827;
+      }
+
+      .choice-management button.primary-button {
+        background: #2563eb;
+        color: #ffffff;
+      }
+
+      .choice-management button.primary-button:hover {
+        background: #1d4ed8;
+        transform: translateY(-1px);
       }
 
       .choice-management button[type="button"] {
@@ -164,6 +174,20 @@
         flex-wrap: wrap;
         gap: 0.75rem;
         align-items: center;
+      }
+
+      .choice-actions button.choice-delete-button {
+        border: none;
+        border-radius: 0.75rem;
+        padding: 0.65rem 0.95rem;
+        background: #dc2626;
+        color: #ffffff;
+        font-weight: 600;
+        box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+      }
+
+      .choice-actions button.choice-delete-button:hover {
+        background: #b91c1c;
       }
 
       .choice-list li {
@@ -218,6 +242,30 @@
         color: #111827;
       }
 
+      .choice-actions .choice-delete-button {
+        border: none;
+        border-radius: 0.75rem;
+        padding: 0.65rem 0.95rem;
+        background: #dc2626;
+        color: #ffffff;
+        font-weight: 600;
+        box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+      }
+
+      .choice-actions .choice-delete-button:hover {
+        background: #b91c1c;
+      }
+
+      .question-button.selected-question {
+        border-color: #2563eb;
+        background: #eff6ff;
+        box-shadow: 0 0px 12px rgba(37, 99, 235, 0.12);
+      }
+
+      .question-button.selected-question:hover {
+        border-color: #2563eb;
+      }
+
       @media (max-width: 860px) {
         body {
           margin: 1rem;
@@ -257,7 +305,10 @@
             <template x-for="question in questions" :key="question.id">
               <li class="question-item">
                 <button
-                  class="question-button"
+                  :class="{
+                    'question-button': true,
+                    'selected-question': selectedQuestion && selectedQuestion.id === question.id,
+                  }"
                   type="button"
                   @click="openQuestion(question.id)"
                 >
@@ -340,7 +391,7 @@
                       x-model="newChoiceText"
                       placeholder="Enter new choice text"
                     />
-                    <button type="submit">Add choice</button>
+                    <button type="submit" class="primary-button">Add choice</button>
                   </form>
 
                   <template
@@ -397,6 +448,13 @@
                                     @click="startEditChoice(choice)"
                                   >
                                     Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="choice-delete-button"
+                                    @click="deleteChoice(choice)"
+                                  >
+                                    Delete
                                   </button>
                                 </div>
                               </div>
@@ -727,6 +785,41 @@
               await this.loadQuestions();
             } catch (error) {
               this.errorMessage = "Could not update this choice.";
+            }
+          },
+
+          async deleteChoice(choice) {
+            if (
+              !confirm(
+                `Delete choice "${choice.choice_text}"? This cannot be undone.`,
+              )
+            ) {
+              return;
+            }
+
+            this.errorMessage = "";
+
+            try {
+              const response = await fetch(
+                `${this.apiBaseUrl}${this.selectedQuestion.id}/choices/${choice.id}/`,
+                {
+                  method: "DELETE",
+                  headers: {
+                    Accept: "application/json",
+                    "X-CSRFToken": this.getCsrfToken(),
+                  },
+                },
+              );
+
+              if (!response.ok) {
+                throw new Error("Could not delete this choice.");
+              }
+
+              this.cancelEditChoice();
+              await this.refreshSelectedQuestion();
+              await this.loadQuestions();
+            } catch (error) {
+              this.errorMessage = error.message || "Could not delete this choice.";
             }
           },
 
