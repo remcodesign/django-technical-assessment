@@ -47,6 +47,8 @@ class PollsApiTests(TestCase):
 
 		self.assertEqual(response.status_code, 200)
 		self.assertIn("csrftoken", response.cookies)
+		self.assertContains(response, "polls/api_frontend.css")
+		self.assertContains(response, "polls/api_frontend.js")
 		self.assertContains(response, "cdn.jsdelivr.net/npm/alpinejs")
 		self.assertContains(response, "pollsFrontend")
 		self.assertContains(response, "Manage choices")
@@ -279,6 +281,21 @@ class PollsApiVoteTests(TestCase):
 		self.assertEqual(choice.votes, 1)
 		self.assertEqual(UserVote.objects.count(), 1)
 		self.assertEqual(response.data["choices"][0]["votes"], 1)
+		self.assertEqual(response.data["user_choice_id"], choice.pk)
+
+	def test_api_question_detail_includes_user_choice_id_for_authenticated_user(self) -> None:
+		question = Question.objects.create(question_text="Selected choice API question")
+		first_choice = Choice.objects.create(question=question, choice_text="Blue")
+		Choice.objects.create(question=question, choice_text="Green")
+		user = User.objects.create_user(username="api-choice-selected", password="secret123")
+		UserVote.objects.create(user=user, question=question, choice=first_choice)
+
+		client = APIClient()
+		client.force_login(user)
+		response: Any = client.get(reverse("polls_api:question-detail", kwargs={"pk": question.pk}))
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["user_choice_id"], first_choice.pk)
 
 	def test_api_vote_rejects_duplicate_vote(self) -> None:
 		"""

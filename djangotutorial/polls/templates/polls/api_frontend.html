@@ -5,284 +5,21 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Polls API Frontend</title>
+    <link rel="stylesheet" href="{% static 'polls/api_frontend.css' %}" />
+    <script defer src="{% static 'polls/api_frontend.js' %}"></script>
     <script
       defer
       src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
     ></script>
-    <style>
-      [x-cloak] {
-        display: none !important;
-      }
-
-      body {
-        background: linear-gradient(180deg, #f7f7f4 0%, #ffffff 100%);
-        font-family: system-ui, sans-serif;
-        margin: 2rem;
-        line-height: 1.5;
-      }
-
-      main {
-        max-width: 1120px;
-        margin: 0 auto;
-      }
-
-      .layout {
-        display: grid;
-        grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
-        gap: 1.25rem;
-        align-items: start;
-        margin-top: 1.5rem;
-      }
-
-      .panel {
-        padding: 1rem;
-        border: 1px solid #e2e2dc;
-        border-radius: 0.75rem;
-        background: rgba(255, 255, 255, 0.9);
-        box-shadow: 0 12px 30px rgba(16, 24, 40, 0.06);
-      }
-
-      .panel h2 {
-        margin-top: 0;
-      }
-
-      .sticky {
-        position: sticky;
-        top: 1rem;
-      }
-
-      .error {
-        color: #a40000;
-      }
-
-      .muted {
-        color: #666;
-      }
-
-      .choice-list,
-      .question-list {
-        list-style: none;
-        padding-left: 0;
-        margin: 0;
-      }
-
-      .question-item + .question-item {
-        margin-top: 0.75rem;
-      }
-
-      .question-button {
-        width: 100%;
-        text-align: left;
-        padding: 0.75rem 0.9rem;
-        border: 1px solid #ddd;
-        border-radius: 0.6rem;
-        background: #fff;
-        cursor: pointer;
-      }
-
-      .question-button:hover,
-      .question-button:focus-visible {
-        border-color: #9c9c96;
-        outline: none;
-      }
-
-      .stats {
-        margin-top: 0.35rem;
-        font-size: 0.92rem;
-      }
-
-      .choice-management {
-        margin-top: 1.25rem;
-        padding: 1rem;
-        background: #f8faf9;
-        border-radius: 1rem;
-        border: 1px solid rgba(148, 163, 184, 0.18);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
-      }
-
-      .choice-management h3,
-      .choice-management h4 {
-        margin-top: 0;
-        margin-bottom: 0.75rem;
-        color: #111827;
-      }
-
-      .choice-management form {
-        display: grid;
-        gap: 0.75rem;
-        margin-bottom: 1rem;
-      }
-
-      .choice-management label {
-        font-size: 0.95rem;
-        color: #374151;
-      }
-
-      .choice-management input[type="text"] {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 0.85rem 1rem;
-        border: 1px solid #d1d5db;
-        border-radius: 0.75rem;
-        background: #ffffff;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
-      }
-
-      .choice-management input[type="text"]:focus {
-        outline: none;
-        border-color: #60a5fa;
-        box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.15);
-      }
-
-      .choice-management button {
-        width: fit-content;
-        border: none;
-        border-radius: 0.75rem;
-        padding: 0.7rem 1rem;
-        background: #1f2937;
-        color: #ffffff;
-        font-weight: 600;
-        cursor: pointer;
-        transition: background 0.2s ease, transform 0.2s ease;
-      }
-
-      .choice-management button:hover {
-        background: #111827;
-      }
-
-      .choice-management button.primary-button {
-        background: #2563eb;
-        color: #ffffff;
-      }
-
-      .choice-management button.primary-button:hover {
-        background: #1d4ed8;
-        transform: translateY(-1px);
-      }
-
-      .choice-management button[type="button"] {
-        background: #f3f4f6;
-        color: #111827;
-      }
-
-      .choice-management button[type="button"]:hover {
-        background: #e5e7eb;
-      }
-
-      .choice-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-        align-items: center;
-      }
-
-      .choice-actions button.choice-delete-button {
-        border: none;
-        border-radius: 0.75rem;
-        padding: 0.65rem 0.95rem;
-        background: #dc2626;
-        color: #ffffff;
-        font-weight: 600;
-        box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12);
-      }
-
-      .choice-actions button.choice-delete-button:hover {
-        background: #b91c1c;
-      }
-
-      .choice-list li {
-        margin-bottom: 0.75rem;
-      }
-
-      .choice-row {
-        display: flex;
-        align-items: center;
-        gap: 0.85rem;
-        padding: 0.85rem 1rem;
-        border-radius: 0.9rem;
-        border: 1px solid #e5e7eb;
-        background: #ffffff;
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
-      }
-
-      .choice-row:hover {
-        border-color: #cbd5e1;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
-      }
-
-      .choice-row span {
-        flex: 1;
-        min-width: 0;
-        color: #111827;
-      }
-
-      .choice-row.editing {
-        padding-right: 0.75rem;
-      }
-
-      .choice-row.editing input[type="text"] {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .choice-row.editing .choice-actions {
-        gap: 0.5rem;
-      }
-
-      .choice-row.editing button[type="submit"] {
-        background: #2563eb;
-      }
-
-      .choice-row.editing button[type="submit"]:hover {
-        background: #1d4ed8;
-      }
-
-      .choice-row.editing button[type="button"] {
-        background: #f8fafc;
-        color: #111827;
-      }
-
-      .choice-actions .choice-delete-button {
-        border: none;
-        border-radius: 0.75rem;
-        padding: 0.65rem 0.95rem;
-        background: #dc2626;
-        color: #ffffff;
-        font-weight: 600;
-        box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12);
-      }
-
-      .choice-actions .choice-delete-button:hover {
-        background: #b91c1c;
-      }
-
-      .question-button.selected-question {
-        border-color: #2563eb;
-        background: #eff6ff;
-        box-shadow: 0 0px 12px rgba(37, 99, 235, 0.12);
-      }
-
-      .question-button.selected-question:hover {
-        border-color: #2563eb;
-      }
-
-      @media (max-width: 860px) {
-        body {
-          margin: 1rem;
-        }
-
-        .layout {
-          grid-template-columns: 1fr;
-        }
-
-        .sticky {
-          position: static;
-        }
-      }
-    </style>
   </head>
   <body>
-    <main x-data="pollsFrontend()" x-init="init()" x-cloak>
+    <main
+      x-data="pollsFrontend()"
+      x-init="init()"
+      x-cloak
+      data-api-base-url="{{ api_base_url|escape }}"
+      data-is-authenticated="{{ request.user.is_authenticated|yesno:'true,false' }}"
+    >
       <h1>Polls API Frontend</h1>
       <p class="muted">
         This page reads and writes through the REST API instead of Django forms.
@@ -358,6 +95,7 @@
                             name="choice"
                             :value="choice.id"
                             x-model="selectedChoiceId"
+                            :disabled="selectedQuestion.user_choice_id"
                           />
                           <label
                             :for="`choice-${choice.id}`"
@@ -366,7 +104,21 @@
                         </div>
                       </template>
                     </fieldset>
-                    <button type="submit">Vote</button>
+
+                    <template x-if="selectedQuestion.user_choice_id">
+                      <p class="muted">
+                        You already voted for
+                        <strong
+                          x-text="selectedQuestion.choices.find(
+                            (choice) => choice.id === selectedQuestion.user_choice_id
+                          )?.choice_text"
+                        ></strong>.
+                      </p>
+                    </template>
+
+                    <button type="submit" :disabled="selectedQuestion.user_choice_id">
+                      Vote
+                    </button>
                   </form>
                 </template>
 
@@ -440,7 +192,10 @@
                             </template>
 
                             <template x-if="editingChoiceId !== choice.id">
-                              <div class="choice-row">
+                              <div
+                                class="choice-row"
+                                :class="{ 'selected-choice': selectedChoiceId === choice.id }"
+                              >
                                 <span x-text="choice.choice_text"></span>
                                 <div class="choice-actions">
                                   <button
@@ -500,339 +255,5 @@
         </section>
       </div>
     </main>
-
-    <script>
-      const POLLS_API_BASE_URL = "{{ api_base_url|escapejs }}";
-      const POLLS_IS_AUTHENTICATED = {{ request.user.is_authenticated|yesno:'true,false' }};
-
-      function pollsFrontend() {
-        return {
-          apiBaseUrl: POLLS_API_BASE_URL,
-          isAuthenticated: POLLS_IS_AUTHENTICATED,
-          loadingQuestions: false,
-          questions: [],
-          selectedQuestion: null,
-          selectedChoiceId: null,
-          newChoiceText: "",
-          editingChoiceId: null,
-          editingChoiceText: "",
-          ignoreChoiceBlurSave: false,
-          choiceBlurTimer: null,
-          view: "index",
-          errorMessage: "",
-          loadError: "",
-          hasLoadedQuestions: false,
-
-          async init() {
-            if (this.hasLoadedQuestions) {
-              // Avoid loading questions again when Alpine re-initializes the component
-              return;
-            }
-            this.hasLoadedQuestions = true;
-            await this.loadQuestions();
-          },
-
-          getCsrfToken() {
-            // Read the cookie that Django sets for same-origin POST requests.
-            const cookie = document.cookie
-              .split("; ")
-              .find((row) => row.startsWith("csrftoken="));
-
-            return cookie ? decodeURIComponent(cookie.split("=")[1]) : "";
-          },
-
-          getApiErrorMessage(payload, fallbackMessage) {
-            return (
-              payload?.error_message ||
-              payload?.choice_text?.[0] ||
-              payload?.detail ||
-              fallbackMessage
-            );
-          },
-
-          async refreshSelectedQuestion() {
-            if (!this.selectedQuestion) {
-              return;
-            }
-
-            // Pull the latest nested choices after a write so the UI stays in sync.
-            const response = await fetch(
-              `${this.apiBaseUrl}${this.selectedQuestion.id}/`,
-              {
-                headers: {
-                  Accept: "application/json",
-                },
-              },
-            );
-
-            if (!response.ok) {
-              throw new Error("Could not refresh this poll.");
-            }
-
-            this.selectedQuestion = await response.json();
-            this.syncQuestionCount(this.selectedQuestion);
-          },
-
-          syncQuestionCount(updatedQuestion) {
-            if (!updatedQuestion) {
-              return;
-            }
-
-            const cacheEntry = this.questions.find(
-              (question) => question.id === updatedQuestion.id,
-            );
-            if (cacheEntry) {
-              cacheEntry.choice_count = updatedQuestion.choice_count;
-            }
-          },
-
-          startEditChoice(choice) {
-            this.editingChoiceId = choice.id;
-            this.editingChoiceText = choice.choice_text;
-          },
-
-          cancelEditChoice() {
-            this.editingChoiceId = null;
-            this.editingChoiceText = "";
-          },
-
-          preventChoiceBlurSave() {
-            this.ignoreChoiceBlurSave = true;
-          },
-
-          handleChoiceFocusOut(choiceId) {
-            clearTimeout(this.choiceBlurTimer);
-            this.choiceBlurTimer = setTimeout(() => {
-              if (this.ignoreChoiceBlurSave) {
-                this.ignoreChoiceBlurSave = false;
-                return;
-              }
-
-              if (this.editingChoiceId === choiceId) {
-                this.saveChoice(choiceId);
-              }
-            }, 120);
-          },
-
-          async loadQuestions() {
-            this.loadingQuestions = true;
-            this.loadError = "";
-
-            try {
-              const response = await fetch(this.apiBaseUrl, {
-                headers: {
-                  Accept: "application/json",
-                },
-              });
-
-              if (!response.ok) {
-                throw new Error("Could not load polls.");
-              }
-
-              this.questions = await response.json();
-            } catch (error) {
-              this.loadError = error.message;
-            } finally {
-              this.loadingQuestions = false;
-            }
-          },
-
-          async openQuestion(questionId) {
-            this.errorMessage = "";
-            this.selectedChoiceId = null;
-            this.view = "detail";
-
-            try {
-              const response = await fetch(`${this.apiBaseUrl}${questionId}/`, {
-                headers: {
-                  Accept: "application/json",
-                },
-              });
-
-              if (!response.ok) {
-                throw new Error("Could not load this poll.");
-              }
-
-              this.selectedQuestion = await response.json();
-              this.newChoiceText = "";
-              this.cancelEditChoice();
-            } catch (error) {
-              this.errorMessage = error.message;
-            }
-          },
-
-          async vote() {
-            if (!this.selectedChoiceId) {
-              this.errorMessage = "You didn't select a choice.";
-              return;
-            }
-
-            this.errorMessage = "";
-
-            try {
-              const response = await fetch(
-                `${this.apiBaseUrl}${this.selectedQuestion.id}/vote/`,
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Accept: "application/json",
-                    "X-CSRFToken": this.getCsrfToken(),
-                  },
-                  body: JSON.stringify({
-                    choice: this.selectedChoiceId,
-                  }),
-                },
-              );
-
-              const payload = await response.json();
-
-              if (!response.ok) {
-                this.errorMessage = this.getApiErrorMessage(
-                  payload,
-                  "Could not submit your vote.",
-                );
-                return;
-              }
-
-              this.selectedQuestion = payload;
-              this.view = "results";
-              this.selectedChoiceId = null;
-            } catch (error) {
-              this.errorMessage = "Could not submit your vote.";
-            }
-          },
-
-          async createChoice() {
-            if (!this.newChoiceText.trim()) {
-              this.errorMessage = "Choice text is required.";
-              return;
-            }
-
-            this.errorMessage = "";
-
-            try {
-              const response = await fetch(
-                `${this.apiBaseUrl}${this.selectedQuestion.id}/choices/`,
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Accept: "application/json",
-                    "X-CSRFToken": this.getCsrfToken(),
-                  },
-                  body: JSON.stringify({
-                    choice_text: this.newChoiceText.trim(),
-                  }),
-                },
-              );
-
-              const payload = await response.json();
-
-              if (!response.ok) {
-                this.errorMessage = this.getApiErrorMessage(
-                  payload,
-                  "Could not add this choice.",
-                );
-                return;
-              }
-
-              this.newChoiceText = "";
-              this.selectedChoiceId = null;
-              await this.refreshSelectedQuestion();
-              await this.loadQuestions();
-            } catch (error) {
-              this.errorMessage = "Could not add this choice.";
-            }
-          },
-
-          async saveChoice(choiceId) {
-            if (!this.editingChoiceText.trim()) {
-              this.errorMessage = "Choice text is required.";
-              return;
-            }
-
-            this.errorMessage = "";
-
-            try {
-              const response = await fetch(
-                `${this.apiBaseUrl}${this.selectedQuestion.id}/choices/${choiceId}/`,
-                {
-                  method: "PATCH",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Accept: "application/json",
-                    "X-CSRFToken": this.getCsrfToken(),
-                  },
-                  body: JSON.stringify({
-                    choice_text: this.editingChoiceText.trim(),
-                  }),
-                },
-              );
-
-              const payload = await response.json();
-
-              if (!response.ok) {
-                this.errorMessage = this.getApiErrorMessage(
-                  payload,
-                  "Could not update this choice.",
-                );
-                return;
-              }
-
-              this.cancelEditChoice();
-              await this.refreshSelectedQuestion();
-              await this.loadQuestions();
-            } catch (error) {
-              this.errorMessage = "Could not update this choice.";
-            }
-          },
-
-          async deleteChoice(choice) {
-            if (
-              !confirm(
-                `Delete choice "${choice.choice_text}"? This cannot be undone.`,
-              )
-            ) {
-              return;
-            }
-
-            this.errorMessage = "";
-
-            try {
-              const response = await fetch(
-                `${this.apiBaseUrl}${this.selectedQuestion.id}/choices/${choice.id}/`,
-                {
-                  method: "DELETE",
-                  headers: {
-                    Accept: "application/json",
-                    "X-CSRFToken": this.getCsrfToken(),
-                  },
-                },
-              );
-
-              if (!response.ok) {
-                throw new Error("Could not delete this choice.");
-              }
-
-              this.cancelEditChoice();
-              await this.refreshSelectedQuestion();
-              await this.loadQuestions();
-            } catch (error) {
-              this.errorMessage = error.message || "Could not delete this choice.";
-            }
-          },
-
-          backToIndex() {
-            this.view = "index";
-            this.selectedQuestion = null;
-            this.selectedChoiceId = null;
-            this.newChoiceText = "";
-            this.cancelEditChoice();
-            this.errorMessage = "";
-          },
-        };
-      }
-    </script>
   </body>
 </html>

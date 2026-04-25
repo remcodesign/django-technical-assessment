@@ -38,7 +38,16 @@ class QuestionListSerializer(serializers.ModelSerializer):
 
 
 class QuestionDetailSerializer(QuestionListSerializer):
+    user_choice_id = serializers.SerializerMethodField()
     choices = ChoiceSerializer(source="choice_set", many=True, read_only=True)
 
     class Meta(QuestionListSerializer.Meta):
-        fields = QuestionListSerializer.Meta.fields + ("choices",)
+        fields = QuestionListSerializer.Meta.fields + ("choices", "user_choice_id")
+
+    def get_user_choice_id(self, question: Question) -> int | None:
+        request = self.context.get("request")
+        if request is None or request.user.is_anonymous:
+            return None
+
+        vote = question.user_votes.filter(user=request.user).select_related("choice").first()
+        return vote.choice_id if vote is not None else None

@@ -22,7 +22,10 @@ class QuestionViewSet(viewsets.ModelViewSet):
     def _fresh_detail_payload(self, question: Question):
         # Re-query the question so the response always includes the latest nested choices and counts.
         fresh_question = Question.objects.with_choice_count().with_choices().get(pk=question.pk)
-        return QuestionDetailSerializer(fresh_question).data
+        return QuestionDetailSerializer(
+            fresh_question,
+            context=self.get_serializer_context(),
+        ).data
 
     def get_queryset(self):  # type: ignore[override]
         queryset = cast(QuestionManager, Question.objects).with_choice_count().order_by("-pub_date")
