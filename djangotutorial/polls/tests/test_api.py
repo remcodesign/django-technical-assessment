@@ -186,7 +186,18 @@ class PollsApiTests(TestCase):
 
 	def test_api_audit_user_list_returns_distinct_usernames(self) -> None:
 		"""
-		Validate that the audit users endpoint returns the available actor names.
+		Validate that the audit users endpoint returns the distinct actor usernames.
+
+		How it works:
+		1. Create two users and a question with a choice.
+		2. Add audit log entries for both users.
+		3. Request the audit users endpoint.
+		4. Assert the response contains both usernames in a distinct list.
+
+		Why this matters:
+		The audit frontend uses this endpoint to populate the user filter autocomplete.
+		If the endpoint returns duplicates or the wrong set of usernames, the filter
+		will become noisy or incomplete and the audit search experience will suffer.
 		"""
 		user_one = User.objects.create_user(username="audit-user-one", password="secret123")
 		user_two = User.objects.create_user(username="audit-user-two", password="secret123")
@@ -351,6 +362,20 @@ class PollsApiVoteTests(TestCase):
 		self.assertIn('"choice_id": ', audit_log.change_to)
 
 	def test_api_question_detail_includes_user_choice_id_for_authenticated_user(self) -> None:
+		"""
+		Validate that the question detail payload includes the authenticated user's selected choice.
+
+		How it works:
+		1. Create a question with two choices.
+		2. Create a user and record a UserVote for the first choice.
+		3. Authenticate as that user and request the question detail endpoint.
+		4. Assert the response includes `user_choice_id` matching the selected choice.
+
+		Why this matters:
+		The API frontend depends on this field to show the user's selected vote and disable
+		re-voting. Without it, the client would have to infer state incorrectly or make an
+		extra request for the user's vote.
+		"""
 		question = Question.objects.create(question_text="Selected choice API question")
 		first_choice = Choice.objects.create(question=question, choice_text="Blue")
 		Choice.objects.create(question=question, choice_text="Green")

@@ -1,4 +1,4 @@
-# Technical Assessment Spreash
+# 1. Technical Assessment Spreash
 
 Minimal Django 6 project with a Celery background task that creates a sample question every hour.
 
@@ -15,6 +15,9 @@ Then continue with Django:
 cd djangotutorial
 uv run python manage.py migrate
 uv run python manage.py seed_polls
+
+# Create an admin user (follow the interactive prompts)
+uv run python manage.py createsuperuser
 ```
 
 ## Run

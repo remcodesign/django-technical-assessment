@@ -18,7 +18,14 @@ def build_authenticated_csrf_client(username: str) -> tuple[APIClient, User, str
 
 
 class AuditLogApiTests(TestCase):
-	def test_audit_log_list_paginates_filters_and_orders_newest_first(self) -> None:
+	"""
+	Integration tests for the audit log API endpoints.
+
+	These tests ensure history browsing works end-to-end for the audit frontend:
+	newest-first ordering, pagination, and filters for model, event, and user.
+	"""
+
+	def _create_audit_history(self) -> User:
 		vote_client, vote_user, vote_csrf_token = build_authenticated_csrf_client("audit-voter")
 		question_vote = Question.objects.create(question_text="Audit vote question")
 		vote_choice = Choice.objects.create(question=question_vote, choice_text="Blue")
@@ -29,7 +36,6 @@ class AuditLogApiTests(TestCase):
 			format="json",
 			HTTP_X_CSRFTOKEN=vote_csrf_token,
 		)
-
 		self.assertEqual(vote_response.status_code, 200)
 
 		choice_client, _choice_user, choice_csrf_token = build_authenticated_csrf_client("audit-editor")
@@ -41,6 +47,7 @@ class AuditLogApiTests(TestCase):
 			format="json",
 			HTTP_X_CSRFTOKEN=choice_csrf_token,
 		)
+		self.assertEqual(create_response.status_code, 201)
 
 		choice_id = create_response.data["id"]
 
@@ -53,6 +60,7 @@ class AuditLogApiTests(TestCase):
 			format="json",
 			HTTP_X_CSRFTOKEN=choice_csrf_token,
 		)
+		self.assertEqual(update_response.status_code, 200)
 
 		delete_response = choice_client.delete(
 			reverse(
@@ -61,11 +69,25 @@ class AuditLogApiTests(TestCase):
 			),
 			HTTP_X_CSRFTOKEN=choice_csrf_token,
 		)
-
-		self.assertEqual(create_response.status_code, 201)
-		self.assertEqual(update_response.status_code, 200)
 		self.assertEqual(delete_response.status_code, 204)
+
 		self.assertEqual(AuditLog.objects.count(), 4)
+		return vote_user
+
+	def test_audit_log_list_orders_newest_first_and_paginates(self) -> None:
+		"""
+		Validate that the audit log list endpoint returns newest-first entries and supports pagination.
+
+		How it works:
+		1. Create a series of audit-producing actions (vote, create, update, delete).
+		2. Query the audit log list with a small page size.
+		3. Assert the newest entries appear first and pagination metadata is present.
+
+		Why this matters:
+		The audit frontend must show the latest activity first and allow browsing older
+		entries without loading the entire history at once.
+		"""
+		self._create_audit_history()
 
 		list_response = self.client.get(
 			reverse("polls_api:auditlog-list"),
@@ -90,6 +112,20 @@ class AuditLogApiTests(TestCase):
 		self.assertEqual(len(second_page.data["results"]), 2)
 		self.assertIsNotNone(second_page.data["previous"])
 
+	def test_audit_log_list_filters_by_model_and_event(self) -> None:
+		"""
+		Validate that the audit log list endpoint can filter by model and event.
+
+		How it works:
+		1. Create a history of audit entries across different models and events.
+		2. Query the list endpoint with a model filter, then an event filter.
+		3. Assert the results only contain entries matching each filter.
+
+		Why this matters:
+		Users should be able to narrow audit history to relevant domains and actions.
+		"""
+		vote_user = self._create_audit_history()
+
 		choice_only_response = self.client.get(
 			reverse("polls_api:auditlog-list"),
 			{"model": "Choice", "page_size": 10},
@@ -109,6 +145,20 @@ class AuditLogApiTests(TestCase):
 		self.assertEqual(vote_only_response.data["results"][0]["actor"], vote_user.username)
 		self.assertEqual(vote_only_response.data["results"][0]["model"], "UserVote")
 		self.assertEqual(vote_only_response.data["results"][0]["event"], "vote")
+
+	def test_audit_log_list_filters_by_user(self) -> None:
+		"""
+		Validate that the audit log list endpoint can filter by user.
+
+		How it works:
+		1. Create a history of audit entries including a vote by a specific user.
+		2. Query the list endpoint with that user's name.
+		3. Assert only entries for that actor are returned.
+
+		Why this matters:
+		The audit frontend needs to support quick lookup of a single user's activity.
+		"""
+		vote_user = self._create_audit_history()
 
 		user_only_response = self.client.get(
 			reverse("polls_api:auditlog-list"),

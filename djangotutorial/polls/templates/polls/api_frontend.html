@@ -52,6 +52,7 @@
       <div class="layout" x-show="activeTab === 'polls'" x-cloak>
         <section class="panel sticky">
           <h2>Polls</h2>
+          <p class="muted">Only the latest 20 polls are shown in this view.</p>
           <template x-if="loadingQuestions">
             <p>Loading polls...</p>
           </template>

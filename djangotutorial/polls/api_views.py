@@ -23,46 +23,9 @@ from .services import (
     record_audit_event,
 )
 
-
-class AuditLogPagination(PageNumberPagination):
-    page_size = 5
-    page_size_query_param = "page_size"
-    max_page_size = 25
-
-
-class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
-    queryset = AuditLog.objects.all()
-    serializer_class = AuditLogSerializer
-    pagination_class = AuditLogPagination
-
-    def get_queryset(self):  # type: ignore[override]
-        queryset = AuditLog.objects.select_related("user").order_by("-created_at", "-pk")
-        query_params = getattr(self.request, "query_params", {})
-        user_filter = query_params.get("user")
-        model_filter = query_params.get("model")
-        event_filter = query_params.get("event")
-
-        if user_filter:
-            queryset = queryset.filter(user__username__iexact=user_filter.strip())
-
-        if model_filter:
-            queryset = queryset.filter(model__iexact=model_filter.strip())
-
-        if event_filter:
-            queryset = queryset.filter(event__iexact=event_filter.strip())
-
-        return queryset
-
-    @action(detail=False, methods=["get"], url_path="users")
-    def users(self, request):
-        usernames = (
-            AuditLog.objects.filter(user__isnull=False)
-            .order_by("user__username")
-            .values_list("user__username", flat=True)
-            .distinct()
-        )
-        return Response(list(usernames))
-
+# The question viewset handles both the question list and detail endpoints since they share most of the same logic, 
+# and the serializer dynamically adjusts based on the action for optimal query performance.
+# The vote and choice management endpoints are implemented as custom actions on the question viewset since they operate on the question resource and require similar context for permissions and response payloads.
 
 class QuestionViewSet(viewsets.ModelViewSet):
     # The base queryset is empty since the list and detail views require different annotations for optimal performance.
@@ -76,18 +39,7 @@ class QuestionViewSet(viewsets.ModelViewSet):
             fresh_question,
             context=self.get_serializer_context(),
         ).data
-
-    def get_queryset(self):  # type: ignore[override]
-        queryset = cast(QuestionManager, Question.objects).with_choice_count().order_by("-pub_date")
-        if self.action in {"retrieve", "vote"}:
-            return queryset.with_choices()
-        return queryset
-
-    def get_serializer_class(self):  # type: ignore[override]
-        if self.action in {"retrieve", "vote"}:
-            return QuestionDetailSerializer
-        return QuestionListSerializer
-
+    
     def _require_authenticated_choice_writer(self, request):
         if request.user.is_authenticated:
             return None
@@ -96,7 +48,20 @@ class QuestionViewSet(viewsets.ModelViewSet):
             {"error_message": "You must be logged in to manage choices."},
             status=status.HTTP_403_FORBIDDEN,
         )
+    
+    def get_queryset(self):  # type: ignore[override]
+        queryset = cast(QuestionManager, Question.objects).with_choice_count().order_by("-pub_date")
+        if self.action == "list":
+            return queryset[:20]
+        if self.action in {"retrieve", "vote"}:
+            return queryset.with_choices()
+        return queryset
 
+    def get_serializer_class(self):  # type: ignore[override]
+        if self.action in {"retrieve", "vote"}:
+            return QuestionDetailSerializer
+        return QuestionListSerializer
+    
     @action(detail=True, methods=["post"], url_path="vote")
     def vote(self, request, pk=None):
         question = self.get_object()
@@ -198,3 +163,44 @@ class QuestionViewSet(viewsets.ModelViewSet):
             )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+    
+# The audit log is read-only, so we can use a simpler viewset with just the list mixin.
+
+class AuditLogPagination(PageNumberPagination):
+    page_size = 5
+    page_size_query_param = "page_size"
+    max_page_size = 25
+
+
+class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    queryset = AuditLog.objects.all()
+    serializer_class = AuditLogSerializer
+    pagination_class = AuditLogPagination
+
+    def get_queryset(self):  # type: ignore[override]
+        queryset = AuditLog.objects.select_related("user").order_by("-created_at", "-pk")
+        query_params = getattr(self.request, "query_params", {})
+        user_filter = query_params.get("user")
+        model_filter = query_params.get("model")
+        event_filter = query_params.get("event")
+
+        if user_filter:
+            queryset = queryset.filter(user__username__iexact=user_filter.strip())
+
+        if model_filter:
+            queryset = queryset.filter(model__iexact=model_filter.strip())
+
+        if event_filter:
+            queryset = queryset.filter(event__iexact=event_filter.strip())
+
+        return queryset
+
+    @action(detail=False, methods=["get"], url_path="users")
+    def users(self, request):
+        usernames = (
+            AuditLog.objects.filter(user__isnull=False)
+            .order_by("user__username")
+            .values_list("user__username", flat=True)
+            .distinct()
+        )
+        return Response(list(usernames))
