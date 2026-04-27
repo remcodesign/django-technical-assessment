@@ -13,6 +13,11 @@ Then continue with Django:
 
 ```bash
 cd djangotutorial
+cp .env.example .env
+# edit .env and set SECRET_KEY=
+```
+
+```bash
 uv run python manage.py migrate
 uv run python manage.py seed_polls
 
