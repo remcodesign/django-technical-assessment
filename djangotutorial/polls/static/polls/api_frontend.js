@@ -454,6 +454,7 @@ window.pollsFrontend = function pollsFrontend() {
     backToChoices() {
       this.view = "detail";
       this.errorMessage = "";
+      this.selectedChoiceId = this.selectedQuestion?.user_choice_id ?? null;
     },
 
     viewResults() {

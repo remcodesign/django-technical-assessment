@@ -27,6 +27,7 @@ djangotutorial/celerybeat-schedule-wal
 # Environment files
 .env
 .env.*
+!.env.example
 auth.json
 
 # IDEs and editors

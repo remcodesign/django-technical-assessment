@@ -10,4 +10,5 @@ dependencies = [
     "redis>=5,<6",
     "pytest>=8.3,<9",
     "pytest-django>=4.11,<5",
+    "django-environ>=0.13.0",
 ]
