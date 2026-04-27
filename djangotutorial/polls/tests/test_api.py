@@ -160,6 +160,28 @@ class PollsApiTests(TestCase):
 		self.assertEqual(audit_log.object_id, str(response.data["id"]))
 		self.assertIn('"choice_text": "New option"', audit_log.change_to)
 
+	def test_api_add_choice_rejects_anonymous_user(self) -> None:
+		"""
+		Validate that POST /api/polls/<id>/choices/ rejects unauthenticated users.
+
+		Why this matters:
+		The login requirement now lives in DRF permissions instead of inline view logic,
+		so we need one regression test that proves the permission gate still blocks
+		anonymous writes before the serializer runs.
+		"""
+		question = Question.objects.create(question_text="Anonymous choice write question")
+
+		response: Any = self.client.post(
+			reverse("polls_api:question-add-choice", kwargs={"pk": question.pk}),
+			{"choice_text": "Blocked option"},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 403)
+		self.assertEqual(response.data["detail"], "Authentication credentials were not provided.")
+		self.assertEqual(Choice.objects.filter(question=question).count(), 0)
+		self.assertEqual(AuditLog.objects.count(), 0)
+
 	def test_api_add_choice_rejects_duplicate_choice_text(self) -> None:
 		"""
 		Validate that duplicate choice text is rejected for the same question.

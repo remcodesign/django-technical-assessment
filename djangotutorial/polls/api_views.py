@@ -4,6 +4,7 @@ from django.db import transaction
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from .models import AuditLog, Choice, Question, QuestionManager
@@ -31,6 +32,14 @@ class QuestionViewSet(viewsets.ModelViewSet):
     # The base queryset is empty since the list and detail views require different annotations for optimal performance.
     queryset = Question.objects.none()
 
+    def get_permissions(self):  # type: ignore[override]
+        if self.action in {"add_choice", "update_choice"}:
+            permission_classes = [IsAuthenticated]
+        else:
+            permission_classes = [AllowAny]
+
+        return [permission() for permission in permission_classes]
+
     def _fresh_detail_payload(self, question: Question):
         # Re-query the question so the response always includes the latest nested choices and counts.
         question_manager = cast(QuestionManager, Question.objects)
@@ -39,16 +48,7 @@ class QuestionViewSet(viewsets.ModelViewSet):
             fresh_question,
             context=self.get_serializer_context(),
         ).data
-    
-    def _require_authenticated_choice_writer(self, request):
-        if request.user.is_authenticated:
-            return None
 
-        return Response(
-            {"error_message": "You must be logged in to manage choices."},
-            status=status.HTTP_403_FORBIDDEN,
-        )
-    
     def get_queryset(self):  # type: ignore[override]
         queryset = cast(QuestionManager, Question.objects).with_choice_count().order_by("-pub_date")
         if self.action == "list":
@@ -88,10 +88,6 @@ class QuestionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="choices")
     def add_choice(self, request, pk=None):
-        auth_response = self._require_authenticated_choice_writer(request)
-        if auth_response is not None:
-            return auth_response
-
         question = self.get_object()
         serializer = ChoiceSerializer(data=request.data, context={"question": question})
         serializer.is_valid(raise_exception=True)
@@ -113,10 +109,6 @@ class QuestionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["patch"], url_path=r"choices/(?P<choice_id>[^/.]+)")
     def update_choice(self, request, pk=None, choice_id=None):
-        auth_response = self._require_authenticated_choice_writer(request)
-        if auth_response is not None:
-            return auth_response
-
         question = self.get_object()
         choice = get_object_or_404(Choice, pk=choice_id, question=question)
         previous_choice_text = choice.choice_text
@@ -143,10 +135,6 @@ class QuestionViewSet(viewsets.ModelViewSet):
 
     @update_choice.mapping.delete  # type: ignore[attr-defined]
     def delete_choice(self, request, pk=None, choice_id=None):
-        auth_response = self._require_authenticated_choice_writer(request)
-        if auth_response is not None:
-            return auth_response
-
         question = self.get_object()
         choice = get_object_or_404(Choice, pk=choice_id, question=question)
 
