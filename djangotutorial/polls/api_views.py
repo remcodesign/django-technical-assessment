@@ -1,7 +1,7 @@
 from django.shortcuts import get_object_or_404
 from typing import cast
 from django.db import transaction
-from rest_framework import mixins, status, viewsets
+from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -13,6 +13,7 @@ from .serializers import (
     ChoiceSerializer,
     QuestionDetailSerializer,
     QuestionListSerializer,
+    VoteSerializer,
 )
 from .services import (
     DuplicateVote,
@@ -65,9 +66,20 @@ class QuestionViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="vote")
     def vote(self, request, pk=None):
         question = self.get_object()
+        serializer = VoteSerializer(data=request.data, question=question)
 
         try:
-            cast_vote(request.user, question, request.data.get("choice"))
+            serializer.is_valid(raise_exception=True)
+        except serializers.ValidationError:
+            return Response(
+                {"error_message": "You didn't select a choice."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        choice = serializer.validated_data["choice"]
+
+        try:
+            cast_vote(request.user, question, choice.pk)
         except UserNotAuthenticated:
             return Response(
                 {"error_message": "You must be logged in to vote."},

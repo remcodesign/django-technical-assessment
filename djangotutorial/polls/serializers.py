@@ -28,6 +28,15 @@ class ChoiceSerializer(serializers.ModelSerializer):
         return normalized
 
 
+class VoteSerializer(serializers.Serializer):
+    choice = serializers.PrimaryKeyRelatedField(queryset=Choice.objects.none())
+
+    def __init__(self, *args, question=None, **kwargs):
+        super().__init__(*args, **kwargs) 
+        if question is not None:
+            self.fields["choice"].queryset = Choice.objects.filter(question=question)
+
+
 class QuestionListSerializer(serializers.ModelSerializer):
     choice_count = serializers.IntegerField(read_only=True)
 

@@ -43,11 +43,12 @@ erDiagram
       datetime created_at
     }
 
-    QUESTION ||--o{ CHOICE : "has"
-    QUESTION ||--o{ USERVOTE : "has"
-    CHOICE ||--o{ USERVOTE : "receives"
-    AUTH_USER ||--o{ USERVOTE : "casts"
-    AUTH_USER ||--o{ AUDITLOG : "writes"
+    QUESTION ||--o{ CHOICE : "[One-to-many] :: has > hasMany"
+    QUESTION ||--o{ USERVOTE : "[One-to-many] :: has votes > hasMany"
+    CHOICE ||--o{ USERVOTE : "[One-to-many] :: receives votes > hasMany"
+    AUTH_USER ||--o{ USERVOTE : "[One-to-many] :: casts > hasMany"
+    AUTH_USER ||--o{ AUDITLOG : "[One-to-many] :: writes > hasMany"
+    AUTH_USER }|--|{ QUESTION : "CONCEPTUAL >> [Many-to-many] :: user-votes > ManyToManyField through UserVote"
 ```
 
 ## Mermaid :: Dataflow Diagrams for polls + auth_user Models
