@@ -58,8 +58,7 @@ class QuestionDetailSerializer(QuestionListSerializer):
         if request is None or request.user.is_anonymous:
             return None
 
-        vote = question.user_votes.filter(user=request.user).select_related("choice").first()
-        return vote.choice_id if vote is not None else None
+        return question.user_votes.filter(user=request.user).values_list("choice_id", flat=True).first()
 
 
 class AuditLogSerializer(serializers.ModelSerializer):
