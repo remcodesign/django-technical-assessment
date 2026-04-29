@@ -152,6 +152,16 @@ Voeg een API-abstractie toe zodat we via REST zowel `Question` als `Choice` kunn
   - Het helpt later ook bij uitbreiding van middleware, rate limiting en authenticatie per laag. (niet toegepast in dit project)
   - Het is een kleine wijziging met veel duidelijkheidswinst.
 
+### Waarom deze viewset-logica er is in 'api_views.py'
+
+```
+class QuestionViewSet(viewsets.ModelViewSet):
+```
+
+In de API-viewset wordt onderscheid gemaakt tussen lijst- en detailverzoeken. Voor `retrieve` prefetchen we `choice_set` zodat de vraag met zijn keuzes in één keer geladen wordt, en gebruiken we een gedetailleerde serializer. Voor andere acties (hier list) houden we de query licht.
+
+De `add_choice` custom action gebruikt `self.get_object()` om de juiste vraag te laden, valideert de binnenkomende keuze via `ChoiceSerializer`, en koppelt daarna de nieuwe keuze expliciet aan die vraag. Dit zorgt voor een veilige geneste endpointstructuur waarin keuzes altijd onder een specifieke vraag worden aangemaakt.
+
 ### Problemen en oplossingen
 
 - In eerste instantie leek een DRF-viewset voor zowel `Question` als `Choice` te volstaan (idee), maar een losse top-level `Choice`-resource levert een ongemakkelijke URL-structuur op en ondermijnt de juiste ouder-kind binding.
@@ -169,6 +179,14 @@ Voeg een API-abstractie toe zodat we via REST zowel `Question` als `Choice` kunn
   - Antwoord: Omdat `Choice` alleen zinvol is in de context van een `Question`, voorkomt een nested endpoint onduidelijke URL’s en mogelijke parent-child confusie. Dit maakt de resource-relatie expliciet in de API en voorkomt dat een keuze zonder vraag kan bestaan.
 - (added) Welke voordelen geeft DRF in deze fase ten opzichte van een custom JsonResponse-oplossing?
   - Antwoord: DRF levert directe validatie, foutafhandeling, serializers en viewset-logica zonder deze zelf te bouwen. Dat versnelt de implementatie en maakt de API robuuster, terwijl de huidige applicatiestructuur behouden blijft.
+
+### Flow
+
+- URL > request > question (CRUD) / choice (action:post) > view > serializer (validator) > [business logic] > serializer (response)
+
+- business logic
+  - simpel (request, validate, save, response)
+  - custom (request, validate, [custom+save], response)
 
 -----------------------
 
@@ -270,7 +288,7 @@ Het doel van deze fase is om een teststrategie te kiezen en een kleine, praktisc
 
 - Bepalen welke functionaliteit echte regressies veroorzaakt als het faalt.
 - Kiezen tussen een eenvoudige Django-teststack en een uitgebreidere `pytest`-opzet.
-- Beslissen welke laag van de app het meest waardevol is om te testen: model, view, API of Celery.
+- Beslissen welke laag van de app het meest waardevol is om te testen: model, view, API en/of Celery.
 - Prioriteren van testdekking op basis van tijd en risico.
 
 ### Opties
@@ -313,7 +331,7 @@ Het doel van deze fase is om een teststrategie te kiezen en een kleine, praktisc
   - Alleen integrationtests zouden kleine maar belangrijke domeinregels missen.
   - Door ook de Celery-taak te testen, vang ik stille regressies in de achtergrondautomatisering vroeg op.
 
-## Tests uit fase 4
+### Tests uit fase 4
 
 - Een compacte set tests is toegevoegd voor de kernflows: modellogica, stemactie, API-detail en choice-creatie.
   - `test_models.py::QuestionModelTests::test_was_published_recently_returns_true_for_recent_question`
@@ -324,7 +342,17 @@ Het doel van deze fase is om een teststrategie te kiezen en een kleine, praktisc
   - `test_tasks.py::CeleryTaskTests::test_create_hourly_question_creates_question_and_choices`
 - Deze tests beschermen de meest risicovolle onderdelen in deze fase zonder onnodige frameworkdetails te testen.
 
-## Tests toegevoegd na deze fase
+### Waarom deze tests
+
+- Deze selectie volgt een risico-gedreven aanpak: we willen minimale testdekking die maximaal beschermt.
+- `test_models.py :: test_was_published_recently_returns_true_for_recent_question` dekt modellogica en zorgt dat de kerndomeinregel over recente vragen betrouwbaar blijft.
+- `test_views.py :: test_vote_creates_user_vote_and_increments_choice_votes` dekt de kritieke stemflow en de belangrijkste bijwerkingen van een stemactie.
+- `test_api.py :: test_api_question_detail_returns_nested_choices` controleert dat de API-detailresponse de relevante gerelateerde data teruggeeft zonder dat de frontend daar extra queries voor hoeft te doen.
+- `test_api.py :: test_api_add_choice_creates_choice_for_question` valideert de geneste create action en bevestigt dat choices altijd aan de juiste vraag worden gekoppeld.
+- De `Celery` guard test is toegevoegd omdat achtergrondtaken geen directe gebruikerfeedback geven, maar wel stil kunnen falen; die test vangt zulke regressies vroeg.
+- Samen vormen deze tests een balans tussen domeinlogica, HTTP/API-contracten, en achtergrondautomatisering, zonder meer framework-internaliteit te testen dan nodig.
+
+### Tests toegevoegd na deze fase
 
 - Twee andere voorbeeldien hoge-impact tests die sindsdien belangrijk zijn gebleven (edge / negative tests):
   - `test_api.py::PollsApiVoteTests::test_api_vote_rejects_invalid_choice` — een vote-edgecase test die kiest voor een mismatch tussen vraag en keuze om verkeerde stemregistratie te voorkomen.
@@ -373,6 +401,7 @@ De opdracht is om individuele stemmen vast te leggen, niet alleen een stemteller
   - alleen `Choice.votes` gebruiken als teller
   - een standaard `ManyToManyField` tussen user en choice gebruiken
   - een expliciet `UserVote` model met eigen metadata maken
+    - (3 FK's en een datum veld : choice_id, question_id, user_id, created_at)
 
 - [cache-strategie]
   - `Choice.votes` verwijderen en later berekenen uit `UserVote`
@@ -589,6 +618,12 @@ Het doel is aantoonbaar te maken dat deze app niet alleen server-rendered kan we
   - ik koos hier voor 'choice' gezien het meer expressief is (bewerkingen hebben direct een duidelijk effect op de antwoorden lijst, het vast zetten van een antwoord wanneer je al een 'vote' hebt gedaan, verwijderen en weer kunnen voten, antwoorden kan je verwijderen zonder hierbij je 'main holder question' te verliezen en verder goed en duidelijk te presenteren in de frontend view en later audit tab)
   - 'questions' had ook gekund, maar is ook al aanwezig in de admin backend
 
+### API frontend URL-structuur vervolg
+
+In Phase 2 hebben we al besloten om het datamodel te volgen: `Question` staat centraal en `Choice` is altijd onderdeel van een vraag. In Phase 7 zetten we diezelfde structuur door in de API frontend. De routes zijn daarom zo ingericht dat acties op keuzes altijd onder een vraag plaatsvinden, bijvoorbeeld `POST /api/polls/<question_id>/choices/` voor het toevoegen van een nieuw antwoord.
+
+Dat maakt de URL-structuur voorspelbaar en consistent met het domein: een `Choice` bestaat in deze applicatie niet los van een `Question`. Het helpt ook om authorisatie en validatie eenvoudig te houden, omdat de viewset eerst de juiste `Question` laadt en daarna pas de `Choice`-bewerking uitvoert.
+
 ### Opties
 
 - [frontend-framework]
@@ -689,11 +724,6 @@ Het doel is aantoonbaar te maken dat deze app niet alleen server-rendered kan we
   - Een gedeelde `QuestionQuerySet` voorkomt duplicatie tussen HTML- en API-laag.
   - Verse querysets per request zorgen ervoor dat de UI altijd actuele data toont, zeker na create, update of delete (hier 'choices').
 
-- [api-routes] nested resources onder Question
-  - De route-structuur weerspiegelt de domeinrelatie tussen vraag en keuze.
-  - Een choice zonder vraag is in dit model geen zinvolle zelfstandige resource.
-  - De databaseconstraint op `(question, choice_text)` helpt duplicaten voorkomen en maakt die relatie nog explicieter.
-
 - [choice-deletion] veilige nested lookup
   - De delete-actie moet altijd gebonden blijven aan de juiste vraag.
   - `get_object_or_404(..., question=question)` voorkomt dat een choice van een andere vraag per ongeluk wordt verwijderd.
@@ -711,6 +741,21 @@ Het doel is aantoonbaar te maken dat deze app niet alleen server-rendered kan we
   - `test_api.py::PollsApiVoteTests::test_api_vote_rejects_duplicate_vote`
 - De nieuwste state-logica wordt beschermd door:
   - `test_api.py::PollsApiTests::test_api_question_detail_includes_user_choice_id_for_authenticated_user`
+
+### Waarom we `QuestionManager` gebruiken
+
+In de API gebruiken we een custom manager op `Question` om querylogica te centraliseren. `QuestionManager` levert een `QuestionQuerySet` met extra methoden:
+
+- `with_choice_count()` voegt met `annotate(choice_count=Count("choice"))` een keuze-telling toe aan elke vraag, zodat we op de lijstpagina geen extra count-queries per vraag hoeven uit te voeren.
+- `with_choices()` gebruikt `prefetch_related("choice_set")` zodat de keuze-rijen voor een vraag één keer worden opgehaald, wat een N+1-probleem voorkomt in de detailweergave.
+
+Door deze logica in de manager te zetten, blijft zowel `api_views.py` als `views.py` overzichtelijk. In plaats van overal dezelfde annotatie- en prefetch-regels opnieuw te schrijven — zoals in de `IndexView` die ook `with_choice_count()` nodig heeft — roepen we gewoon:
+
+```python
+queryset = cast(QuestionManager, Question.objects).with_choice_count().order_by("-pub_date")
+```
+
+Dat betekent dat de viewset en de gewone Django `ListView` beide een `QuestionManager` gebruiken die altijd een `QuestionQuerySet` teruggeeft met de extra helper-methoden. Daarmee wordt het correct samenstellen van de query een herbruikbare service in plaats van een losse view-detailregel.
 
 ### Performance
 
@@ -757,7 +802,7 @@ Het doel is aantoonbaar te maken dat deze app niet alleen server-rendered kan we
 
 ### Algemene opdracht observatie
 
-De nieuwe fase vraagt expliciet om een historische audit trail: een overzicht van wie welke wijziging heeft doorgevoerd en wat er precies is veranderd. Rollback of herstel van oude versies is niet nodig; het gaat alleen om traceerbaarheid en transparantie van de mutaties.
+Deze fase vraagt expliciet om een historische audit trail: een overzicht van wie welke wijziging heeft doorgevoerd en wat er precies is veranderd. Rollback of herstel van oude versies is niet nodig; het gaat alleen om traceerbaarheid en transparantie van de mutaties.
 
 ### Kern onderdelen van deze opdracht
 
@@ -821,7 +866,7 @@ De nieuwe fase vraagt expliciet om een historische audit trail: een overzicht va
 ### Gekozen opties
 
 - [audit-opslag]
-  - Kies voor een dedicated `AuditLog` model in de `polls`-app.
+  - Kies voor een dedicated `AuditLog` model in de `polls`-app. (one-to-many :: 1 FK)
 - [audit-relatie]
   - Kies voor een string-gebaseerde `object_id` plus modelnaam, zonder FK naar de doelmodellen.
 - [audit-schrijfpunt]
@@ -901,7 +946,8 @@ De nieuwe fase vraagt expliciet om een historische audit trail: een overzicht va
   - `test_audit.py::AuditLogApiTests::test_audit_log_list_orders_newest_first_and_paginates`  
   - `test_audit.py::AuditLogApiTests::test_audit_log_list_filters_by_model_and_event`
   - `test_audit.py::AuditLogApiTests::test_audit_log_list_filters_by_user`
-- Samen zorgen deze testlagen ervoor dat de audittrail leesbaar blijft en dat alleen echte mutaties worden vastgelegd.
+- Samen zorgen deze testlagen ervoor dat de audittrail leesbaar blijft en dat alleen echte mutaties worden vastgelegd. 
+  - Dit gezien er alleen een audit log ontstaat wanneer alles goed ging, dus geen errors. Nu zouden we dus ook een tweede log kunnen aanmaken voor deze errors, maar dan heb je het over een error-log.
 
 ### Performance
 
@@ -920,6 +966,7 @@ De nieuwe fase vraagt expliciet om een historische audit trail: een overzicht va
   - Oplossing: architectuur implementeren zodat auditregels kunnen worden verwijderd wanneer een gebruiker weg is, maar met bewustwording dat dit een expliciete keuze is (niet anonimisering, maar verwijdering).
 - Het auditmechanisme moet zichtbaar blijven in code, niet verborgen in een signal-keten.
   - Oplossing: auditregels direct schrijven op de mutation boundary in de view/service layer, zodat iemand die de code leest onmiddellijk ziet waar en hoe audit plaatsvindt.
+  - Mogelijk moet dit anders worden ingericht bij meer complexe apps, gezien we anders te veel losse 'audit aanmaak calls' krijgen.
 - Filterinterface kan overbelast worden met te veel inputvelden, vooral op mobiel.
   - Oplossing: drie duidelijk gescheiden filter-inputs (gebruiker, model, event), elk met een specifiek doel, zodat gebruikers snel kunnen filteren zonder overload.
 - Autocomplete voor gebruikersnamen vereist een extra API-endpoint.

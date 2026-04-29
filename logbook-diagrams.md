@@ -2,7 +2,7 @@
 
 # Diagrams
 
-## Mermaid :: ER Diagram for polls + auth_user Models
+## ER Diagram for polls + auth_user Models
 
 ```mermaid
 erDiagram
@@ -51,7 +51,7 @@ erDiagram
     AUTH_USER }|--|{ QUESTION : "CONCEPTUAL >> [Many-to-many] :: user-votes > ManyToManyField through UserVote"
 ```
 
-## Mermaid :: Dataflow Diagrams for polls + auth_user Models
+## Dataflow Diagrams for polls + auth_user Models
 
 ### 1) Vote flow sequence
 
@@ -103,7 +103,7 @@ flowchart LR
     E1 --> F1[Return updated choice payload]
 ```
 
-## Mermaid :: DRF dataflow diagram (QuestionView)
+## DRF dataflow diagram (QuestionView)
 
 ```mermaid
 sequenceDiagram
@@ -185,7 +185,7 @@ Base path: `/api/polls/`
 
 ---
 
-## Mermaid diagram
+## API/DRF Routes diagram
 
 ```mermaid
 flowchart TD
